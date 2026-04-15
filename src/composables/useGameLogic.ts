@@ -2,7 +2,7 @@
  * useGameLogic.ts - 游戏规则引擎 (Vue 3 composable)
  */
 import type { GameEvent, Cell, Player, Item, PlayerItem, WeatherType, PropertyLevel, GameStateContext } from '../types/game'
-import { boardCells, events as eventConfig, START_BONUS, ITEMS, WEATHER_EFFECTS, PROPERTY_LEVELS, SKILL_UPGRADE_THRESHOLD } from '../config'
+import { boardCells, events as eventConfig, START_BONUS, ITEMS, WEATHER_EFFECTS, PROPERTY_LEVELS, SKILL_UPGRADE_THRESHOLD, ACHIEVEMENTS } from '../config'
 import type { GameStateReturn } from '../stores/gameState'
 
 export const EventTypes = {
@@ -171,7 +171,6 @@ export function useGameLogic(gameState: GameStateReturn) {
 
   // 检查成就
   function checkAchievements(player: Player, ctx: GameStateContext, events: GameEvent[]) {
-    const { ACHIEVEMENTS } = require('../config')
     for (const achievement of ACHIEVEMENTS) {
       if (!player.achievements.includes(achievement.id)) {
         ctx.winner = gameState.state.winner ?? undefined

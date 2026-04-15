@@ -26,7 +26,7 @@
     </Transition>
 
     <div class="weather-indicator" :class="'weather-' + weather">
-      {{ getWeatherIcon() }} {{ getWeatherText() }}
+      {{ weatherIcon }} {{ weatherText }}
     </div>
 
     <div v-if="playerItems.length > 0" class="quick-items">
@@ -44,81 +44,52 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { WeatherType, PlayerItem } from '../types/game'
 
-defineProps({
-  diceResult: {
-    type: Number,
-    default: 0
-  },
-  enabled: {
-    type: Boolean,
-    default: false
-  },
-  isAiTurn: {
-    type: Boolean,
-    default: false
-  },
-  weather: {
-    type: String as () => WeatherType,
-    default: 'sunny'
-  },
-  playerItems: {
-    type: Array as () => PlayerItem[],
-    default: () => []
-  },
-  showStore: {
-    type: Boolean,
-    default: true
-  }
+interface Props {
+  diceResult?: number
+  enabled?: boolean
+  isAiTurn?: boolean
+  weather?: WeatherType
+  playerItems?: PlayerItem[]
+  showStore?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  diceResult: 0,
+  enabled: false,
+  isAiTurn: false,
+  weather: 'sunny',
+  playerItems: () => [],
+  showStore: true
 })
 
-defineEmits(['roll', 'open-store', 'use-item'])
+defineEmits<{
+  roll: []
+  'open-store': []
+  'use-item': [itemId: string]
+}>()
 
-function getWeatherIcon(): string {
+const weatherIcon = computed(() => {
   const icons: Record<WeatherType, string> = {
     sunny: '☀️',
     rainy: '🌧️',
     foggy: '🌫️',
     stormy: '⛈️'
   }
-  return icons[(this as any).weather] ?? '☀️'
-}
+  return icons[props.weather] ?? '☀️'
+})
 
-function getWeatherText(): string {
+const weatherText = computed(() => {
   const texts: Record<WeatherType, string> = {
     sunny: '晴',
     rainy: '雨',
     foggy: '雾',
     stormy: '风暴'
   }
-  return texts[(this as any).weather] ?? '晴'
-}
-</script>
-
-<script lang="ts">
-export default {
-  methods: {
-    getWeatherIcon(): string {
-      const icons: Record<WeatherType, string> = {
-        sunny: '☀️',
-        rainy: '🌧️',
-        foggy: '🌫️',
-        stormy: '⛈️'
-      }
-      return icons[this.weather as WeatherType] ?? '☀️'
-    },
-    getWeatherText(): string {
-      const texts: Record<WeatherType, string> = {
-        sunny: '晴',
-        rainy: '雨',
-        foggy: '雾',
-        stormy: '风暴'
-      }
-      return texts[this.weather as WeatherType] ?? '晴'
-    }
-  }
-}
+  return texts[props.weather] ?? '晴'
+})
 </script>
 
 <style scoped>
