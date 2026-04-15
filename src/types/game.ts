@@ -347,13 +347,19 @@ export interface Player {
   revealedCells: Set<string>      // 已探索的格子 (格式: "layer-index")
   controlledFactions: FactionType[]  // 控制的势力
   defeatedBosses: string[]        // 击败的BOSS ID列表
+  activeBuffs: Buff[]            // 当前激活的buff/debuff
+  turnIncome: number             // 本回合收入
   defeatedObstacles: string[]     // 击败的障碍物ID列表
   discoveredSecrets: string[]      // 发现的秘密通道ID列表
   frozenTurns: number             // 冻结回合数 (监狱)
   stationUses: Record<string, number>  // 各驿站使用次数
-  turnIncome: number              // 本回合额外收入
-  activeBuffs: { type: string; remainingTurns: number }[]  // 当前激活的buff
   seasonImmunity?: SeasonType     // 免疫的季节效果
+}
+
+// Buff类型
+export interface Buff {
+  type: 'luck' | 'curse' | 'speed' | 'freeze' | 'shield'
+  remainingTurns: number
 }
 
 export interface AIConfig {

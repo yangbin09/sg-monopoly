@@ -22,6 +22,7 @@ export const EventTypes = {
   WEATHER_CHANGE: 'WEATHER_CHANGE',
   SHOW_ACHIEVEMENT: 'SHOW_ACHIEVEMENT',
   SHOW_CHOICE: 'SHOW_CHOICE',
+  SHOW_BUY_CONFIRM: 'SHOW_BUY_CONFIRM',
   PLAYER_BANKRUPT: 'PLAYER_BANKRUPT',
   SKILL_UPGRADED: 'SKILL_UPGRADED',
   UPDATE_WEATHER: 'UPDATE_WEATHER',
@@ -368,33 +369,13 @@ export function useGameLogic(gameState: GameStateReturn) {
     const ownerId = gameState.getPropertyOwner(cellIndex)
 
     if (!ownerId) {
-      // 无主地产，可购买
-      if (player.money >= (cellData.cost ?? 0)) {
-        player.money -= cellData.cost ?? 0
-        const newCell = { ...cellData, level: 0 as PropertyLevel }
-        player.properties.push(newCell)
-        gameState.setPropertyOwner(cellIndex, player.id, 0)
-        player.consecutiveTurnsWithoutBuy = 0
-
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}购买了${cellData.name}！` })
-
-        // 技能效果
-        const skillResult = applySkill(player, 'buyProperty', {})
-        if (skillResult?.moneyChange) {
-          player.money += skillResult.moneyChange
-          if (skillResult.message) {
-            events.push({ type: EventTypes.APPEND_MESSAGE, payload: skillResult.message })
-          }
-        }
-
-        // 检查技能升级
-        if (gameState.checkSkillUpgrade(player.id)) {
-          events.push({
-            type: EventTypes.SKILL_UPGRADED,
-            payload: { playerId: player.id, newLevel: player.skillLevel }
-          })
-          events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}的技能升级到${player.skillLevel}级！` })
-        }
+      // 无主地产，弹出购买确认
+      if (player.money >= (cellData.cost ?? 0) * 0.5) {
+        events.push({
+          type: EventTypes.SHOW_BUY_CONFIRM,
+          payload: { playerId: player.id, cell: cellData, cellIndex }
+        })
+        // 不自动购买，等待玩家确认
       } else {
         events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}的资金不足，无法购买！` })
         player.consecutiveTurnsWithoutBuy++
@@ -855,6 +836,47 @@ export function useGameLogic(gameState: GameStateReturn) {
     return events
   }
 
+  // 确认购买地产（由 SHOW_BUY_CONFIRM 事件触发）
+  function confirmPropertyBuy(playerId: number, cellIndex: number, cellData: Cell, events: GameEvent[]): boolean {
+    const player = gameState.getPlayerById(playerId)
+    if (!player) return false
+
+    const cost = cellData.cost ?? 0
+    if (player.money < cost) {
+      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}的金币不足，无法购买！` })
+      return false
+    }
+
+    player.money -= cost
+    const newCell = { ...cellData, level: 0 as PropertyLevel, index: cellIndex }
+    player.properties.push(newCell)
+    gameState.setPropertyOwner(cellIndex, player.id, 0)
+    player.consecutiveTurnsWithoutBuy = 0
+
+    events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}购买了${cellData.name}！` })
+
+    // 技能效果
+    const skillResult = applySkill(player, 'buyProperty', {})
+    if (skillResult?.moneyChange) {
+      player.money += skillResult.moneyChange
+      if (skillResult.message) {
+        events.push({ type: EventTypes.APPEND_MESSAGE, payload: skillResult.message })
+      }
+    }
+
+    // 检查技能升级
+    if (gameState.checkSkillUpgrade(player.id)) {
+      events.push({
+        type: EventTypes.SKILL_UPGRADED,
+        payload: { playerId: player.id, newLevel: player.skillLevel }
+      })
+      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}的技能升级到${player.skillLevel}级！` })
+    }
+
+    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
+    return true
+  }
+
   return {
     selectCharacter,
     startGame,
@@ -866,6 +888,7 @@ export function useGameLogic(gameState: GameStateReturn) {
     buyItem,
     useItem,
     upgradeProperty,
+    confirmPropertyBuy,
     handleHuarongChoice,
     handleCellAction,
     calculateRent,

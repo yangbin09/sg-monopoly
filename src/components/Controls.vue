@@ -11,11 +11,19 @@
     </button>
 
     <button
-      v-if="showStore"
+      v-if="showStore && !isAiTurn && enabled"
       class="store-button"
       @click="$emit('open-store')"
     >
       🏪 商店
+    </button>
+
+    <button
+      v-if="!isAiTurn && enabled"
+      class="end-turn-button"
+      @click="$emit('end-turn')"
+    >
+      结束回合
     </button>
 
     <Transition name="dice-fade">
@@ -25,8 +33,35 @@
       </div>
     </Transition>
 
+    <div v-if="diceHistory.length > 0" class="dice-history">
+      <span class="history-label">历史:</span>
+      <span
+        v-for="(val, idx) in diceHistory.slice(0, 3)"
+        :key="idx"
+        class="history-value"
+      >
+        {{ val }}
+      </span>
+    </div>
+
     <div class="weather-indicator" :class="'weather-' + weather">
       {{ weatherIcon }} {{ weatherText }}
+    </div>
+
+    <div v-if="playerBuff.length > 0" class="status-indicator buff">
+      <span v-for="buff in playerBuff" :key="buff.type" class="buff-item" :title="`剩余 ${buff.remainingTurns} 回合`">
+        {{ getBuffIcon(buff.type) }}
+      </span>
+    </div>
+
+    <div v-if="playerDebuff.length > 0" class="status-indicator debuff">
+      <span v-for="debuff in playerDebuff" :key="debuff.type" class="debuff-item" :title="`剩余 ${debuff.remainingTurns} 回合`">
+        {{ getDebuffIcon(debuff.type) }}
+      </span>
+    </div>
+
+    <div v-if="frozenTurns > 0" class="frozen-indicator">
+      🧊 冻结 {{ frozenTurns }} 回合
     </div>
 
     <div v-if="playerItems.length > 0" class="quick-items">
@@ -34,7 +69,7 @@
         v-for="item in playerItems"
         :key="item.id + item.ownedAt"
         class="quick-item"
-        :title="item.name"
+        :title="`${item.name} (点击使用)`"
         @click="$emit('use-item', item.id)"
       >
         {{ item.icon }}
@@ -45,7 +80,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { WeatherType, PlayerItem } from '../types/game'
+import type { WeatherType, PlayerItem, Buff } from '../types/game'
 
 interface Props {
   diceResult?: number
@@ -53,7 +88,11 @@ interface Props {
   isAiTurn?: boolean
   weather?: WeatherType
   playerItems?: PlayerItem[]
+  playerBuff?: Buff[]
+  playerDebuff?: Buff[]
+  frozenTurns?: number
   showStore?: boolean
+  diceHistory?: number[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -62,13 +101,18 @@ const props = withDefaults(defineProps<Props>(), {
   isAiTurn: false,
   weather: 'sunny',
   playerItems: () => [],
-  showStore: true
+  playerBuff: () => [],
+  playerDebuff: () => [],
+  frozenTurns: 0,
+  showStore: true,
+  diceHistory: () => []
 })
 
-defineEmits<{
+const emit = defineEmits<{
   roll: []
   'open-store': []
   'use-item': [itemId: string]
+  'end-turn': []
 }>()
 
 const weatherIcon = computed(() => {
@@ -90,26 +134,44 @@ const weatherText = computed(() => {
   }
   return texts[props.weather] ?? '晴'
 })
+
+function getBuffIcon(type: string): string {
+  const icons: Record<string, string> = {
+    luck: '🍀',
+    speed: '⚡',
+    shield: '🛡️'
+  }
+  return icons[type] ?? '✨'
+}
+
+function getDebuffIcon(type: string): string {
+  const icons: Record<string, string> = {
+    curse: '💀',
+    freeze: '❄️'
+  }
+  return icons[type] ?? '⚠️'
+}
 </script>
 
 <style scoped>
 .controls {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
   justify-content: center;
   padding: 12px 20px;
   background: rgba(20, 15, 10, 0.9);
   border-radius: 12px;
   border: 2px solid #5a4a3a;
+  margin-top: 10px;
 }
 
 .roll-button {
   background: linear-gradient(145deg, #d4a574, #b8956a);
   color: #1a1a2e;
   border: none;
-  padding: 12px 32px;
+  padding: 12px 28px;
   font-size: 1.1rem;
   font-weight: bold;
   border-radius: 8px;
@@ -158,6 +220,23 @@ const weatherText = computed(() => {
   box-shadow: 0 5px 15px rgba(74, 144, 164, 0.4);
 }
 
+.end-turn-button {
+  background: linear-gradient(145deg, #8a7a4a, #6a5a3a);
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  font-size: 1rem;
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.end-turn-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(138, 122, 74, 0.4);
+}
+
 .dice-result {
   display: flex;
   align-items: center;
@@ -178,6 +257,29 @@ const weatherText = computed(() => {
   font-weight: bold;
 }
 
+.dice-history {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(30, 25, 20, 0.7);
+  border-radius: 6px;
+  border: 1px solid #444;
+}
+
+.history-label {
+  color: #666;
+  font-size: 0.8rem;
+}
+
+.history-value {
+  color: #888;
+  font-size: 0.9rem;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
 .weather-indicator {
   padding: 6px 12px;
   border-radius: 6px;
@@ -189,6 +291,37 @@ const weatherText = computed(() => {
 .weather-rainy { background: rgba(33, 150, 243, 0.2); color: #2196f3; }
 .weather-foggy { background: rgba(158, 158, 158, 0.3); color: #9e9e9e; }
 .weather-stormy { background: rgba(103, 58, 183, 0.3); color: #7c4dff; }
+
+.status-indicator {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.status-indicator.buff {
+  background: rgba(76, 175, 80, 0.2);
+  border: 1px solid rgba(76, 175, 80, 0.4);
+}
+
+.status-indicator.debuff {
+  background: rgba(255, 87, 87, 0.2);
+  border: 1px solid rgba(255, 87, 87, 0.4);
+}
+
+.buff-item, .debuff-item {
+  font-size: 1rem;
+}
+
+.frozen-indicator {
+  padding: 6px 12px;
+  background: rgba(135, 206, 235, 0.2);
+  border: 1px solid rgba(135, 206, 235, 0.4);
+  border-radius: 6px;
+  color: #87ceeb;
+  font-size: 0.85rem;
+  font-weight: bold;
+}
 
 .quick-items {
   display: flex;
@@ -234,7 +367,7 @@ const weatherText = computed(() => {
     min-width: 110px;
   }
 
-  .store-button {
+  .store-button, .end-turn-button {
     padding: 8px 16px;
     font-size: 0.9rem;
   }
@@ -247,9 +380,9 @@ const weatherText = computed(() => {
     font-size: 1.2rem;
   }
 
-  .weather-indicator {
-    padding: 4px 10px;
-    font-size: 0.8rem;
+  .layer-controls {
+    width: 100%;
+    justify-content: center;
   }
 
   .quick-item {

@@ -217,8 +217,8 @@ export const TERRAIN_EFFECTS = {
 
 export const TELEPORT_PAIRS = [
   { id: 'tp1', name: '阴阳传送门', entryCells: [5, 10], exitCells: [21, 26], layerFrom: 'ground', layerTo: 'ground', bidirectional: true },
-  { id: 'tp2', name: '天地传送门', entryCells: [0], exitCells: [0], layerFrom: 'ground', layerTo: 'sky', bidirectional: true, activationCost: 100 },
-  { id: 'tp3', name: '地底传送门', entryCells: [35], exitCells: [0], layerFrom: 'ground', layerTo: 'underground', bidirectional: true, activationCost: 80 },
+  { id: 'tp2', name: '天地传送门', entryCells: [0], exitCells: [52], layerFrom: 'ground', layerTo: 'sky', bidirectional: true, activationCost: 100 },
+  { id: 'tp3', name: '地底传送门', entryCells: [35], exitCells: [62], layerFrom: 'ground', layerTo: 'underground', bidirectional: true, activationCost: 80 },
   { id: 'tp4', name: 'BOSS传送门', entryCells: [50], exitCells: [99], layerFrom: 'ground', layerTo: 'ground', bidirectional: false, activationCost: 200 }
 ]
 
@@ -236,8 +236,8 @@ export const STATIONS = [
 
 export const PORTS = [
   { id: 'port1', name: '长江渡口', fromCell: 8, fromLayer: 'ground', toCell: 15, toLayer: 'ground', travelCost: 50 },
-  { id: 'port2', name: '东海渔港', fromCell: 20, fromLayer: 'ground', toCell: 3, toLayer: 'sky', travelCost: 80 },
-  { id: 'port3', name: '地下暗河', fromCell: 10, fromLayer: 'underground', toCell: 25, toLayer: 'underground', travelCost: 30 }
+  { id: 'port2', name: '东海渔港', fromCell: 20, fromLayer: 'ground', toCell: 55, toLayer: 'sky', travelCost: 80 },
+  { id: 'port3', name: '地下暗河', fromCell: 65, fromLayer: 'underground', toCell: 69, toLayer: 'underground', travelCost: 30 }
 ]
 
 // ============== 障碍物配置 ==============
@@ -263,9 +263,9 @@ export const RESOURCE_NODES = [
 // ============== 秘密通道配置 ==============
 
 export const SECRET_PASSAGES = [
-  { id: 'sp1', fromCell: 11, fromLayer: 'ground', toCell: 4, toLayer: 'underground', discoveryChance: 0.3, revealed: false },
-  { id: 'sp2', fromCell: 30, fromLayer: 'ground', toCell: 2, toLayer: 'sky', discoveryChance: 0.2, revealed: false },
-  { id: 'sp3', fromCell: 45, fromLayer: 'ground', toCell: 20, toLayer: 'underground', discoveryChance: 0.25, revealed: false }
+  { id: 'sp1', fromCell: 11, fromLayer: 'ground', toCell: 66, toLayer: 'underground', discoveryChance: 0.3, revealed: false },
+  { id: 'sp2', fromCell: 30, fromLayer: 'ground', toCell: 54, toLayer: 'sky', discoveryChance: 0.2, revealed: false },
+  { id: 'sp3', fromCell: 45, fromLayer: 'ground', toCell: 68, toLayer: 'underground', discoveryChance: 0.25, revealed: false }
 ]
 
 // ============== BOSS据点配置 ==============
@@ -361,7 +361,7 @@ export const boardCells = [
   { id: 'cell_8', name: '秘密通道', type: 'secret', secretPassageId: 'sp1', layer: 'ground', terrain: 'wasteland', faction: 'neutral' },
   { id: 'cell_9', name: '随机事件', type: 'fate', mapEventId: 'me1', layer: 'ground', terrain: 'normal', faction: 'neutral' },
   { id: 'cell_10', name: '武陟', type: 'property', cost: 240, rent: 55, layer: 'ground', terrain: 'normal', faction: 'wei', maxLevel: 3, upgradeCosts: [120, 200], rentByLevel: [55, 82, 125, 185] },
-  { id: 'cell_11', name: '地下层入口', type: 'layer_stairs_down', layer: 'ground', terrain: 'mountain', layerTransition: { targetLayer: 'underground', targetCell: 0 } },
+  { id: 'cell_11', name: '地下层入口', type: 'layer_stairs_down', layer: 'ground', terrain: 'mountain', layerTransition: { targetLayer: 'underground', targetCell: 62 } },
 
   // 第1行
   { id: 'cell_12', name: '陈留', type: 'property', cost: 270, rent: 62, layer: 'ground', terrain: 'normal', faction: 'wei', maxLevel: 3, upgradeCosts: [135, 220], rentByLevel: [62, 93, 140, 210] },
@@ -409,7 +409,7 @@ export const boardCells = [
   { id: 'cell_48', name: '子午谷', type: 'secret', secretPassageId: 'sp2', layer: 'ground', terrain: 'forest', faction: 'neutral' },
   { id: 'cell_49', name: '蓝田', type: 'property', cost: 210, rent: 48, layer: 'ground', terrain: 'normal', faction: 'neutral', maxLevel: 3, upgradeCosts: [105, 170], rentByLevel: [48, 72, 108, 162] },
   { id: 'cell_50', name: '武关', type: 'property', cost: 260, rent: 60, layer: 'ground', terrain: 'mountain', faction: 'neutral', maxLevel: 3, upgradeCosts: [130, 210], rentByLevel: [60, 90, 135, 200] },
-  { id: 'cell_51', name: '天空层入口', type: 'layer_stairs_up', layer: 'ground', terrain: 'mountain', layerTransition: { targetLayer: 'sky', targetCell: 0, cost: 100 } },
+  { id: 'cell_51', name: '天空层入口', type: 'layer_stairs_up', layer: 'ground', terrain: 'mountain', layerTransition: { targetLayer: 'sky', targetCell: 52, cost: 100 } },
 
   // 第5行 (天空层)
   { id: 'cell_52', name: '天空城', type: 'property', cost: 400, rent: 100, layer: 'sky', terrain: 'castle', faction: 'neutral', maxLevel: 3, upgradeCosts: [200, 320], rentByLevel: [100, 150, 225, 340] },
@@ -424,7 +424,7 @@ export const boardCells = [
   { id: 'cell_61', name: '返回地面', type: 'layer_stairs_down', layer: 'sky', terrain: 'mountain', layerTransition: { targetLayer: 'ground', targetCell: 51 } },
 
   // 第6行 (地下层)
-  { id: 'cell_62', name: '地下入口', type: 'layer_stairs_up', layer: 'underground', terrain: 'mountain', layerTransition: { targetLayer: 'ground', targetCell: 7 } },
+  { id: 'cell_62', name: '地下入口', type: 'layer_stairs_up', layer: 'underground', terrain: 'mountain', layerTransition: { targetLayer: 'ground', targetCell: 11 } },
   { id: 'cell_63', name: '矿洞', type: 'property', cost: 200, rent: 45, layer: 'underground', terrain: 'mountain', faction: 'neutral', maxLevel: 3, upgradeCosts: [100, 160], rentByLevel: [45, 67, 100, 150] },
   { id: 'cell_64', name: '宝石洞', type: 'resource', resourceNodeId: 'res1', layer: 'underground', terrain: 'mountain', faction: 'neutral' },
   { id: 'cell_65', name: '地下暗河', type: 'port', portId: 'port3', layer: 'underground', terrain: 'water', faction: 'neutral' },
@@ -434,7 +434,7 @@ export const boardCells = [
   { id: 'cell_69', name: '地下驿站', type: 'station', stationId: 'station5', layer: 'underground', terrain: 'normal', faction: 'neutral' },
   { id: 'cell_70', name: '秘密矿道', type: 'secret', secretPassageId: 'sp3', layer: 'underground', terrain: 'wasteland', faction: 'neutral' },
   { id: 'cell_71', name: '地下要塞', type: 'property', cost: 280, rent: 65, layer: 'underground', terrain: 'castle', faction: 'neutral', maxLevel: 3, upgradeCosts: [140, 225], rentByLevel: [65, 98, 146, 220] },
-  { id: 'cell_72', name: '返回地面', type: 'layer_stairs_up', layer: 'underground', terrain: 'mountain', layerTransition: { targetLayer: 'ground', targetCell: 0 } },
+  { id: 'cell_72', name: '返回地面', type: 'layer_stairs_up', layer: 'underground', terrain: 'mountain', layerTransition: { targetLayer: 'ground', targetCell: 11 } },
 
   // 第7-11行 (扩展区域 - 简化版填充)
   ...Array.from({ length: 72 }, (_, i) => {

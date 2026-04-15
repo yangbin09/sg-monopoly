@@ -2,7 +2,7 @@
  * gameState.ts - 游戏状态管理 (Vue 3 reactive store)
  */
 import { reactive, computed } from 'vue'
-import type { Character, Player, Cell, WeatherType, PlayerItem, PropertyLevel } from '../types/game'
+import type { Character, Player, Cell, WeatherType, PlayerItem, PropertyLevel, MapLayer } from '../types/game'
 import { INITIAL_MONEY, WEATHER_EFFECTS } from '../config'
 
 export function createGameState() {
@@ -47,7 +47,18 @@ export function createGameState() {
       achievements: [],
       isAI,
       shieldActive: false,
-      consecutiveTurnsWithoutBuy: 0
+      consecutiveTurnsWithoutBuy: 0,
+      // 超大地图系统
+      currentLayer: 'ground',
+      revealedCells: new Set(),
+      controlledFactions: [],
+      defeatedBosses: [],
+      activeBuffs: [],
+      turnIncome: 0,
+      defeatedObstacles: [],
+      discoveredSecrets: [],
+      frozenTurns: 0,
+      stationUses: {}
     }
     state.players.push(player)
     state.selectingPlayerIndex++
@@ -208,8 +219,63 @@ export function createGameState() {
     state.messages = []
   }
 
+  // 存根属性 - 用于兼容 useGameLogic.ts
+  // 这些属性在 Pinia store 中是 computed properties
+  const currentSeasonEffect = { value: null }
+  const currentTimeEffect = { value: null }
+
+  // 获取地形效果
+  function getTerrainEffect(layer: MapLayer, cellIndex: number) {
+    // 默认地形效果
+    return {
+      moveCost: 1,
+      rentModifier: 1.0,
+      specialEffect: null
+    }
+  }
+
+  // 超大地图系统存根函数
+  function handleTeleport(playerId: number, teleportPairId: string) {
+    return { success: false, message: '传送门功能暂不可用' }
+  }
+
+  function useStation(playerId: number, stationId: string) {
+    return { success: false, message: '驿站功能暂不可用', extraMoves: 0 }
+  }
+
+  function defeatObstacle(playerId: number, obstacleId: string) {
+    return { success: false, message: '障碍功能暂不可用' }
+  }
+
+  function freezePlayer(playerId: number, turns: number) {
+    // 冻结玩家回合
+    const player = getPlayerById(playerId)
+    if (player) {
+      player.frozenTurns = turns
+    }
+  }
+
+  function collectResource(playerId: number, resourceNodeId: string) {
+    return { success: false, message: '资源功能暂不可用' }
+  }
+
+  function discoverSecret(playerId: number, secretPassageId: string) {
+    return { success: false, message: '秘密通道功能暂不可用' }
+  }
+
+  function revealCell(layer: MapLayer, cellIndex: number, playerId: number) {
+    // 记录已探索的格子
+    const player = getPlayerById(playerId)
+    if (player) {
+      const key = `${layer}-${cellIndex}`
+      player.revealedCells.add(key)
+    }
+  }
+
   return {
     state,
+    currentSeasonEffect,
+    currentTimeEffect,
     addPlayer,
     getCurrentPlayer,
     nextTurn,
@@ -226,7 +292,15 @@ export function createGameState() {
     unlockAchievement,
     reset,
     addMessage,
-    clearMessages
+    clearMessages,
+    getTerrainEffect,
+    handleTeleport,
+    useStation,
+    defeatObstacle,
+    freezePlayer,
+    collectResource,
+    discoverSecret,
+    revealCell
   }
 }
 

@@ -148,11 +148,24 @@ export const useGameStore = defineStore('game', () => {
     return players.value[nextIndex]
   }
 
+  // 外部玩家数据源 - 用于与 gameState 保持同步
+  let externalPlayersSource: Ref<Player[]> | null = null
+
+  function setPlayersSource(source: Ref<Player[]>) {
+    externalPlayersSource = source
+  }
+
   function getPlayerById(playerId: number): Player | undefined {
+    if (externalPlayersSource) {
+      return externalPlayersSource.value.find(p => p.id === playerId)
+    }
     return players.value.find(p => p.id === playerId)
   }
 
   function getAlivePlayers(): Player[] {
+    if (externalPlayersSource) {
+      return externalPlayersSource.value.filter(p => p.inGame)
+    }
     return players.value.filter(p => p.inGame)
   }
 
@@ -594,6 +607,7 @@ export const useGameStore = defineStore('game', () => {
     getAlivePlayers,
     getCurrentPlayer,
     checkSkillUpgrade,
+    setPlayersSource,
 
     // 格子探索
     revealCell,

@@ -82,7 +82,7 @@ import { ITEMS, PROPERTY_LEVELS } from '../config'
 
 const props = defineProps<{
   show: boolean
-  player: Player | null
+  player: Player | null | undefined
   weather: WeatherType
 }>()
 
