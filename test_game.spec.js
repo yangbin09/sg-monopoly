@@ -55,6 +55,9 @@ test.describe('三国大富翁游戏测试', () => {
     // 点击关羽
     await page.locator('.character-card', { hasText: '关羽' }).click();
 
+    // 等待游戏界面渲染
+    await page.waitForSelector('#game', { state: 'visible', timeout: 5000 });
+
     // 游戏界面应显示
     await expect(page.locator('#start-screen')).toHaveClass(/hidden/);
     await expect(page.locator('#game')).toBeVisible();
@@ -77,6 +80,9 @@ test.describe('三国大富翁游戏测试', () => {
     // 选择角色进入游戏
     await page.locator('.character-card', { hasText: '刘备' }).click();
     await page.locator('.character-card', { hasText: '关羽' }).click();
+
+    // 等待游戏界面渲染
+    await page.waitForSelector('#board', { state: 'visible', timeout: 5000 });
 
     // 验证棋盘
     await expect(page.locator('#board')).toBeVisible();
