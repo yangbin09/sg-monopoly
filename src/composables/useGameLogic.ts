@@ -528,7 +528,7 @@ export function useGameLogic(gameState: GameStateReturn) {
   }
 
   // 选择角色
-  function selectCharacter(character: any, existingCharacters: any[], events: GameEvent[]) {
+  function selectCharacter(character: any, existingCharacters: any[], events: GameEvent[] = []) {
     if (gameState.state.gameInProgress) {
       return events
     }
