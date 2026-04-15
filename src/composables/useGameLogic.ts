@@ -1,8 +1,8 @@
 /**
- * useGameLogic.ts - 游戏规则引擎 (Vue 3 composable)
+ * useGameLogic.ts - 游戏规则引擎 (Vue 3 composable - 超大地图版)
  */
-import type { GameEvent, Cell, Player, Item, PlayerItem, WeatherType, PropertyLevel, GameStateContext, Character } from '../types/game'
-import { boardCells, events as eventConfig, START_BONUS, ITEMS, WEATHER_EFFECTS, PROPERTY_LEVELS, SKILL_UPGRADE_THRESHOLD, ACHIEVEMENTS } from '../config'
+import type { GameEvent, Cell, Player, Item, PlayerItem, WeatherType, PropertyLevel, GameStateContext, Character, MapLayer, TerrainType } from '../types/game'
+import { boardCells, events as eventConfig, START_BONUS, ITEMS, WEATHER_EFFECTS, PROPERTY_LEVELS, SKILL_UPGRADE_THRESHOLD, ACHIEVEMENTS, TERRAIN_EFFECTS, FACTIONS, SEASONS, TIMES_OF_DAY, BOSS_LAIRS, OBSTACLES } from '../config'
 import type { GameStateReturn } from '../stores/gameState'
 
 export const EventTypes = {
@@ -24,7 +24,22 @@ export const EventTypes = {
   SHOW_CHOICE: 'SHOW_CHOICE',
   PLAYER_BANKRUPT: 'PLAYER_BANKRUPT',
   SKILL_UPGRADED: 'SKILL_UPGRADED',
-  UPDATE_WEATHER: 'UPDATE_WEATHER'
+  UPDATE_WEATHER: 'UPDATE_WEATHER',
+  // 超大地图系统事件
+  SEASON_CHANGE: 'SEASON_CHANGE',
+  TIME_OF_DAY_CHANGE: 'TIME_OF_DAY_CHANGE',
+  REVEAL_CELL: 'REVEAL_CELL',
+  LAYER_TRANSITION: 'LAYER_TRANSITION',
+  TELEPORT: 'TELEPORT',
+  USE_STATION: 'USE_STATION',
+  OBSTACLE_DEFEATED: 'OBSTACLE_DEFEATED',
+  BOSS_DEFEATED: 'BOSS_DEFEATED',
+  SECRET_REVEALED: 'SECRET_REVEALED',
+  FACTION_CONTROL: 'FACTION_CONTROL',
+  RESOURCE_COLLECTED: 'RESOURCE_COLLECTED',
+  BUFF_APPLIED: 'BUFF_APPLIED',
+  FREEZE_PLAYER: 'FREEZE_PLAYER',
+  SHOW_BOSS: 'SHOW_BOSS'
 }
 
 export function useGameLogic(gameState: GameStateReturn) {
@@ -153,9 +168,165 @@ export function useGameLogic(gameState: GameStateReturn) {
       case 'recruit':
         handleRecruit(player, cellData, events)
         break
+      // 超大地图系统新增格子类型
+      case 'teleport_entry':
+        handleTeleportCell(player, cellData, events)
+        break
+      case 'station':
+        handleStationCell(player, cellData, events)
+        break
+      case 'port':
+        handlePortCell(player, cellData, events)
+        break
+      case 'obstacle':
+        handleObstacleCell(player, cellData, events)
+        break
+      case 'fate':
+        handleFateCell(player, cellData, events)
+        break
+      case 'prison':
+        handlePrisonCell(player, cellData, events)
+        break
+      case 'boss':
+        handleBossCell(player, cellData, events)
+        break
+      case 'resource':
+        handleResourceCell(player, cellData, events)
+        break
+      case 'secret':
+        handleSecretCell(player, cellData, events)
+        break
+      case 'layer_stairs_up':
+      case 'layer_stairs_down':
+        handleLayerTransition(player, cellData, events)
+        break
     }
     // 检查成就
     checkAchievements(player, ctx, events)
+  }
+
+  // 传送门格子
+  function handleTeleportCell(player: Player, cellData: Cell, events: GameEvent[]) {
+    if (cellData.teleportPairId) {
+      const result = gameState.handleTeleport(player.id, cellData.teleportPairId)
+      if (result.success) {
+        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}使用传送门：${result.message}` })
+      } else {
+        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}尝试使用传送门：${result.message}` })
+      }
+    }
+  }
+
+  // 驿站格子
+  function handleStationCell(player: Player, cellData: Cell, events: GameEvent[]) {
+    if (cellData.stationId) {
+      const result = gameState.useStation(player.id, cellData.stationId)
+      if (result.success) {
+        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}使用${cellData.name}：${result.message}` })
+        events.push({ type: EventTypes.USE_STATION, payload: { extraMoves: result.extraMoves } })
+      } else {
+        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}无法使用驿站：${result.message}` })
+      }
+    }
+  }
+
+  // 港口格子
+  function handlePortCell(player: Player, cellData: Cell, events: GameEvent[]) {
+    events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}到达港口，可以使用水路前往其他地区。` })
+  }
+
+  // 障碍物格子
+  function handleObstacleCell(player: Player, cellData: Cell, events: GameEvent[]) {
+    if (cellData.obstacleId) {
+      const obstacle = OBSTACLES.find(o => o.id === cellData.obstacleId)
+      if (obstacle) {
+        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}遭遇${obstacle.icon}${obstacle.name}！(HP: ${obstacle.hp})` })
+        // 自动触发战斗
+        const result = gameState.defeatObstacle(player.id, cellData.obstacleId)
+        if (result.success) {
+          events.push({ type: EventTypes.APPEND_MESSAGE, payload: result.message })
+        }
+      }
+    }
+  }
+
+  // 命运格子
+  function handleFateCell(player: Player, cellData: Cell, events: GameEvent[]) {
+    const effects = [
+      { type: 'gold' as const, value: 100, description: '发现路人丢失的钱袋，获得100金币' },
+      { type: 'gold' as const, value: -80, description: '遭遇小偷，损失80金币' },
+      { type: 'buff' as const, value: 1, duration: 3, description: '获得幸运buff，持续3回合' },
+      { type: 'debuff' as const, value: 1, duration: 2, description: '被诅咒，骰子-1，持续2回合' }
+    ]
+    const effect = effects[Math.floor(Math.random() * effects.length)]
+
+    events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}触发命运：${effect.description}` })
+
+    if (effect.type === 'gold') {
+      if (effect.value > 0) {
+        player.money += effect.value
+      } else {
+        payMoney(player, null, -effect.value, events)
+      }
+    } else if (effect.type === 'buff') {
+      player.activeBuffs.push({ type: 'luck', remainingTurns: effect.duration ?? 3 })
+      events.push({ type: EventTypes.BUFF_APPLIED, payload: { playerId: player.id, buffType: 'luck' } })
+    } else if (effect.type === 'debuff') {
+      player.activeBuffs.push({ type: 'curse', remainingTurns: effect.duration ?? 2 })
+      events.push({ type: EventTypes.BUFF_APPLIED, payload: { playerId: player.id, buffType: 'curse' } })
+    }
+  }
+
+  // 监狱格子
+  function handlePrisonCell(player: Player, cellData: Cell, events: GameEvent[]) {
+    gameState.freezePlayer(player.id, 2)
+    events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}被捕入狱，冻结2回合！` })
+    events.push({ type: EventTypes.FREEZE_PLAYER, payload: { playerId: player.id, turns: 2 } })
+  }
+
+  // BOSS格子
+  function handleBossCell(player: Player, cellData: Cell, events: GameEvent[]) {
+    if (cellData.bossLairId) {
+      const boss = BOSS_LAIRS.find(b => b.id === cellData.bossLairId)
+      if (boss) {
+        if (player.defeatedBosses.includes(boss.id)) {
+          events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${boss.name}已被击败，可自由通行。` })
+        } else {
+          events.push({ type: EventTypes.SHOW_BOSS, payload: { boss, playerId: player.id } })
+          events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}遭遇BOSS：${boss.bossName}！(HP: ${boss.bossHp}/${boss.bossMaxHp})` })
+        }
+      }
+    }
+  }
+
+  // 资源格子
+  function handleResourceCell(player: Player, cellData: Cell, events: GameEvent[]) {
+    if (cellData.resourceNodeId) {
+      const result = gameState.collectResource(player.id, cellData.resourceNodeId)
+      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}${result.message}` })
+    }
+  }
+
+  // 秘密通道格子
+  function handleSecretCell(player: Player, cellData: Cell, events: GameEvent[]) {
+    if (cellData.secretPassageId) {
+      const result = gameState.discoverSecret(player.id, cellData.secretPassageId)
+      if (result.success) {
+        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}：${result.message}` })
+      } else {
+        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}尝试发现秘密通道：${result.message}` })
+      }
+    }
+  }
+
+  // 层级切换格子
+  function handleLayerTransition(player: Player, cellData: Cell, events: GameEvent[]) {
+    if (cellData.layerTransition) {
+      const { targetLayer, targetCell, cost } = cellData.layerTransition
+      const layerName = targetLayer === 'underground' ? '地下层' : targetLayer === 'sky' ? '天空层' : '地面'
+      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}准备进入${layerName}，需要${cost || 0}金币` })
+      // 实际切换由UI触发
+    }
   }
 
   // 获取游戏上下文（用于成就判定）
@@ -434,20 +605,62 @@ export function useGameLogic(gameState: GameStateReturn) {
   }
 
   // 移动玩家
-  function movePlayer(player: Player, steps: number, events: GameEvent[]) {
+  function movePlayer(player: Player, steps: number, events: GameEvent[], extraMoves: number = 0) {
+    // 检查冻结状态
+    if (player.frozenTurns > 0) {
+      player.frozenTurns--
+      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}被冻结，回合跳过！剩余${player.frozenTurns}回合` })
+      return
+    }
+
+    // 处理buff
+    const hasCurse = player.activeBuffs.some(b => b.type === 'curse')
+    if (hasCurse) {
+      steps = Math.max(1, steps - 1)
+      const curse = player.activeBuffs.find(b => b.type === 'curse')
+      if (curse) {
+        curse.remainingTurns--
+        if (curse.remainingTurns <= 0) {
+          player.activeBuffs = player.activeBuffs.filter(b => b.type !== 'curse')
+          events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}的诅咒buff消散了` })
+        }
+      }
+    }
+
+    // 处理季节效果
+    const seasonEffect = gameState.currentSeasonEffect.value
+    if (seasonEffect) {
+      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `当前季节：${seasonEffect.icon}${seasonEffect.name} - ${seasonEffect.specialEffect}` })
+    }
+
     const oldPos = player.position
-    const newPos = (oldPos + steps) % boardCells.length
+    let totalMoves = steps + extraMoves
+    let newPos = (oldPos + totalMoves) % boardCells.length
 
     // 经过起点
     if (newPos <= oldPos) {
       player.money += START_BONUS
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}经过起点，获得200金币！` })
+      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}经过起点，获得${START_BONUS}金币！` })
+    }
+
+    // 获取地形效果
+    const layer = player.currentLayer
+    const terrainEffect = gameState.getTerrainEffect(layer, newPos)
+
+    if (terrainEffect.moveCost > 1) {
+      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}进入${terrainEffect.moveCost > 2 ? '困难' : '较难'}地形，移动消耗增加！` })
     }
 
     player.position = newPos
     player.lastDiceRoll = steps
     events.push({ type: EventTypes.UPDATE_TOKENS })
-    handleCellAction(player, boardCells[newPos], events)
+
+    // 探索格子
+    gameState.revealCell(layer, newPos, player.id)
+
+    // 处理到达的格子
+    const cellData = boardCells[newPos]
+    handleCellAction(player, cellData, events)
   }
 
   // 购买道具
@@ -584,6 +797,13 @@ export function useGameLogic(gameState: GameStateReturn) {
       roll = Math.max(1, roll + weather.diceModifier)
     }
 
+    // 昼夜修正
+    const timeEffect = gameState.currentTimeEffect.value
+    if (timeEffect?.diceModifier) {
+      roll = Math.max(1, roll + timeEffect.diceModifier)
+      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}受到${timeEffect.icon}${timeEffect.name}影响，骰子${timeEffect.diceModifier > 0 ? '+' : ''}${timeEffect.diceModifier}点` })
+    }
+
     // 技能效果
     const skillResult = applySkill(player, 'rollDice', { roll })
     if (skillResult) {
@@ -606,7 +826,9 @@ export function useGameLogic(gameState: GameStateReturn) {
     events.push({ type: EventTypes.UPDATE_DICE, payload: roll })
     events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}掷出了${roll}点` })
 
-    movePlayer(player, roll, events)
+    // 检查是否有驿站的额外移动
+    // extraMoves 会通过事件从驿站使用后传递
+    movePlayer(player, roll, events, 0)
 
     return events
   }

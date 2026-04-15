@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "mcp__plugin_ecc_github__create_pull_request",
+      "Bash(gh pr create --title 'feat: 完整可玩性增强系统' --body ':*)",
+      "Bash(gh auth:*)",
+      "Read(//c/Users/16922/.claude/**)",
+      "Bash(dir \"C:\\\\Users\\\\16922\\\\.claude\\\\\")",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)"
     ]
   }
 }
