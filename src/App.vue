@@ -84,7 +84,7 @@ import MessageLog from './components/MessageLog.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import StoreModal from './components/StoreModal.vue'
 import AchievementPanel from './components/AchievementPanel.vue'
-import type { SavedGame, Achievement } from './types/game'
+import type { SavedGame, Achievement, GameEvent, Character } from './types/game'
 
 const gameState = createGameState()
 const { selectCharacter, rollDice, nextTurnLogic, buyItem, useItem, upgradeProperty, handleHuarongChoice } = useGameLogic(gameState)
@@ -113,7 +113,7 @@ const currentPlayer = computed(() => gameState.getCurrentPlayer())
 const currentPlayerItems = computed(() => currentPlayer.value?.items ?? [])
 
 // Process game events
-function processEvents(events: any[]) {
+function processEvents(events: GameEvent[]) {
   if (!events || !Array.isArray(events)) return
   for (const event of events) {
     switch (event.type) {
@@ -181,7 +181,7 @@ function processEvents(events: any[]) {
   }
 }
 
-function handleCharacterSelect(character: any) {
+function handleCharacterSelect(character: Character) {
   audio.play('click')
   const events = selectCharacter(character, characters)
   processEvents(events)
@@ -243,12 +243,12 @@ function handleUpgradeProperty(cellIndex: number) {
   const player = currentPlayer.value
   if (!player) return
 
-  const upgradeEvents: any[] = []
+  const upgradeEvents: GameEvent[] = []
   upgradeProperty(player, cellIndex, upgradeEvents)
   processEvents(upgradeEvents)
 }
 
-function handleApplySettings(newSettings: any) {
+function handleApplySettings(newSettings: { volume: number; muted: boolean }) {
   audio.setVolume(newSettings.volume)
   audio.setMuted(newSettings.muted)
 }

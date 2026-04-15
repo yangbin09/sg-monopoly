@@ -1,7 +1,7 @@
 /**
  * useGameLogic.ts - 游戏规则引擎 (Vue 3 composable)
  */
-import type { GameEvent, Cell, Player, Item, PlayerItem, WeatherType, PropertyLevel, GameStateContext } from '../types/game'
+import type { GameEvent, Cell, Player, Item, PlayerItem, WeatherType, PropertyLevel, GameStateContext, Character } from '../types/game'
 import { boardCells, events as eventConfig, START_BONUS, ITEMS, WEATHER_EFFECTS, PROPERTY_LEVELS, SKILL_UPGRADE_THRESHOLD, ACHIEVEMENTS } from '../config'
 import type { GameStateReturn } from '../stores/gameState'
 
@@ -527,7 +527,7 @@ export function useGameLogic(gameState: GameStateReturn) {
   }
 
   // 选择角色
-  function selectCharacter(character: any, existingCharacters: any[], events: GameEvent[] = []) {
+  function selectCharacter(character: Character, existingCharacters: Character[], events: GameEvent[] = []) {
     if (gameState.state.gameInProgress) {
       return events
     }
