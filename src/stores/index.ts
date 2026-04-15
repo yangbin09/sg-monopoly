@@ -4,6 +4,3 @@
 export { useGameStore } from './gameStore'
 export { useSettingsStore } from './settingsStore'
 export { useAudioStore } from './audioStore'
-
-// types
-export type { Settings } from './settingsStore'

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { createGameState } from './stores/gameState'
+import { setActivePinia, createPinia } from 'pinia'
+import { useGameStore } from './stores/gameStore'
 import { useGameLogic, EventTypes } from './composables/useGameLogic'
 
 describe('useGameLogic', () => {
-  let gameState: ReturnType<typeof createGameState>
+  let gameStore: ReturnType<typeof useGameStore>
   let gameLogic: ReturnType<typeof useGameLogic>
 
   const liuChar = {
@@ -12,7 +13,8 @@ describe('useGameLogic', () => {
     image: 'images/liu.webp',
     skill: '购买地产时获得50金币',
     skillType: 'buyProperty',
-    skillBonus: 50
+    skillBonus: 50,
+    skillUpgrades: []
   }
 
   const guanChar = {
@@ -21,51 +23,53 @@ describe('useGameLogic', () => {
     image: 'images/guan.webp',
     skill: '缴纳租金时减少10金币',
     skillType: 'payRent',
-    skillReduction: 10
+    skillReduction: 10,
+    skillUpgrades: []
   }
 
   beforeEach(() => {
-    gameState = createGameState()
-    gameLogic = useGameLogic(gameState)
+    setActivePinia(createPinia())
+    gameStore = useGameStore()
+    gameLogic = useGameLogic(gameStore)
   })
 
   describe('selectCharacter', () => {
     it('should add player on character selection', () => {
-      const events = gameLogic.selectCharacter(liuChar, [])
-      expect(gameState.state.players.length).toBe(1)
-      expect(gameState.state.players[0].character.id).toBe('liu')
+      const events = gameLogic.selectCharacter(liuChar as any)
+      expect(gameStore.players.length).toBe(1)
+      expect(gameStore.players[0].character.id).toBe('liu')
     })
 
     it('should prevent duplicate character selection', () => {
-      gameLogic.selectCharacter(liuChar, [])
-      const events = gameLogic.selectCharacter(liuChar, [])
+      gameLogic.selectCharacter(liuChar as any)
+      const msgCount = gameStore.messages.length
+      gameLogic.selectCharacter(liuChar as any)
 
-      const appendMsg = events.find((e: any) => e.type === EventTypes.APPEND_MESSAGE)
-      expect(appendMsg?.payload).toContain('已被选择')
+      // Should have error message about duplicate
+      expect(gameStore.messages.length).toBeGreaterThan(msgCount)
+      expect(gameStore.messages[msgCount]).toContain('已被选择')
     })
 
     it('should start game after selecting 2 players', () => {
-      gameLogic.selectCharacter(liuChar, [])
-      const events = gameLogic.selectCharacter(guanChar, [])
+      gameLogic.selectCharacter(liuChar as any)
+      gameLogic.selectCharacter(guanChar as any)
 
-      const showGame = events.find((e: any) => e.type === EventTypes.SHOW_GAME)
-      expect(showGame).toBeDefined()
-      expect(gameState.state.gameInProgress).toBe(true)
+      expect(gameStore.gameInProgress).toBe(true)
     })
   })
 
   describe('rollDice', () => {
     it('should return events when game is in progress', () => {
-      gameLogic.selectCharacter(liuChar, [])
-      gameLogic.selectCharacter(guanChar, [])
+      gameLogic.selectCharacter(liuChar as any)
+      gameLogic.selectCharacter(guanChar as any)
 
       const events = gameLogic.rollDice()
       expect(events.length).toBeGreaterThan(0)
     })
 
     it('should disable roll button initially', () => {
-      gameLogic.selectCharacter(liuChar, [])
-      gameLogic.selectCharacter(guanChar, [])
+      gameLogic.selectCharacter(liuChar as any)
+      gameLogic.selectCharacter(guanChar as any)
 
       const events = gameLogic.rollDice()
       const disableBtn = events.find((e: any) => e.type === EventTypes.ROLL_BUTTON_ENABLED)
@@ -74,8 +78,8 @@ describe('useGameLogic', () => {
     })
 
     it('should update dice result', () => {
-      gameLogic.selectCharacter(liuChar, [])
-      gameLogic.selectCharacter(guanChar, [])
+      gameLogic.selectCharacter(liuChar as any)
+      gameLogic.selectCharacter(guanChar as any)
 
       const events = gameLogic.rollDice()
       const diceEvent = events.find((e: any) => e.type === EventTypes.UPDATE_DICE)
@@ -94,11 +98,12 @@ describe('useGameLogic', () => {
         skill: '点数小于3时自动 +1',
         skillType: 'rollDice',
         skillMinRoll: 3,
-        skillBonus: 1
+        skillBonus: 1,
+        skillUpgrades: []
       }
 
-      gameState.addPlayer(zhangChar)
-      const player = gameState.state.players[0]
+      gameStore.addPlayer(zhangChar as any)
+      const player = gameStore.players[0]
 
       const result = gameLogic.applySkill(player, 'rollDice', { roll: 2 })
       expect(result?.roll).toBe(3)
@@ -106,16 +111,16 @@ describe('useGameLogic', () => {
     })
 
     it('should apply payRent skill for Guan Yu', () => {
-      gameState.addPlayer(guanChar)
-      const player = gameState.state.players[0]
+      gameStore.addPlayer(guanChar as any)
+      const player = gameStore.players[0]
 
       const result = gameLogic.applySkill(player, 'payRent', { amount: 50 })
-      expect(result?.amount).toBe(40) // 50 - 10 reduction
+      expect(result?.amount).toBe(40)
     })
 
     it('should not apply skill for Liu Bei on rent', () => {
-      gameState.addPlayer(liuChar)
-      const player = gameState.state.players[0]
+      gameStore.addPlayer(liuChar as any)
+      const player = gameStore.players[0]
 
       const result = gameLogic.applySkill(player, 'payRent', { amount: 50 })
       expect(result).toBeNull()
@@ -124,17 +129,15 @@ describe('useGameLogic', () => {
 
   describe('checkGameEnd', () => {
     it('should end game when one player remains', () => {
-      gameState.addPlayer(liuChar)
-      gameState.addPlayer(guanChar)
+      gameStore.addPlayer(liuChar as any)
+      gameStore.addPlayer(guanChar as any)
 
-      gameState.state.players[0].inGame = false
-      gameState.state.gameInProgress = true
+      gameStore.players[0].inGame = false
+      gameStore.gameInProgress = true
 
-      const events: any[] = []
-      gameLogic.checkGameEnd(events)
+      gameLogic.checkGameEnd()
 
-      const gameEnd = events.find((e: any) => e.type === EventTypes.GAME_END)
-      expect(gameEnd).toBeDefined()
+      expect(gameStore.gameEnded).toBe(true)
     })
   })
 })

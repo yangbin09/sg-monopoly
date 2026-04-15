@@ -12,7 +12,7 @@ export interface AIConfig {
   skillUsageTiming: number         // 技能使用时机 (0-1)
 }
 
-const DEFAULT_AI_CONFIG: AIConfig = {
+export const DEFAULT_AI_CONFIG: AIConfig = {
   buyPropertyThreshold: 0.3,     // 资金 > 30% 时购买
   eventRiskTolerance: 0.4,       // 40% 概率接受负面事件
   upgradeAggression: 0.5,         // 50% 概率升级

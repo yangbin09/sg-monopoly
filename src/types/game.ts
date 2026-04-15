@@ -1,35 +1,35 @@
 /**
- * 游戏类型定义 - 扩展版本
+ * 游戏类型定义 - 地图增强版本
  */
 
 // ============== 道具系统 ==============
 
-export type ItemType = 'dice' | 'shield' | 'steal' | 'teleport' | 'luck'
+export type ItemType = 'dice' | 'shield' | 'steal' | 'teleport' | 'luck' | 'freeze' | 'reverse' | 'mortgage'
 
 export interface Item {
   id: string
   name: string
   description: string
   type: ItemType
-  value: number      // 效果值 (骰子点数/掠夺金额等)
-  cost: number       // 购买价格
+  value: number
+  cost: number
   usable: boolean
   icon: string
 }
 
 export interface PlayerItem extends Item {
-  ownedAt: number   // 获得时间戳
+  ownedAt: number
 }
 
 // ============== 地产升级系统 ==============
 
-export type PropertyLevel = 0 | 1 | 2 | 3  // 空地/茅屋/砖房/宫殿
+export type PropertyLevel = 0 | 1 | 2 | 3
 
 export interface PropertyLevelConfig {
   level: PropertyLevel
   name: string
   rentMultiplier: number
-  upgradeCost?: number  // 升至该等级需要的费用
+  upgradeCost?: number
 }
 
 // ============== 天气系统 ==============
@@ -39,8 +39,8 @@ export type WeatherType = 'sunny' | 'rainy' | 'foggy' | 'stormy'
 export interface WeatherEffect {
   type: WeatherType
   description: string
-  diceModifier: number   // 骰子修正
-  rentModifier: number   // 租金倍率
+  diceModifier: number
+  rentModifier: number
 }
 
 // ============== 角色技能 ==============
@@ -59,25 +59,131 @@ export interface Character {
   image: string
   skill: string
   skillType: SkillType
-  skillLevel: number              // 当前等级 1-3
-  skillUpgrades: SkillUpgrade[]    // 每级升级配置
-  // rollDice 技能
+  skillLevel: number
+  skillUpgrades: SkillUpgrade[]
   skillMinRoll?: number
   skillBonus?: number
-  // buyProperty 技能
   skillMoneyBonus?: number
-  // payRent 技能
   skillReduction?: number
-  // event 技能
   skillImmune?: boolean
-  skillBounce?: boolean            // 反弹负面事件
-  // weather 技能
+  skillBounce?: boolean
   weatherImmune?: boolean
 }
 
-// ============== 格子扩展 ==============
+// ============== 地图系统 ==============
 
-export type CellType = 'start' | 'property' | 'event' | 'store' | 'tax' | 'ambush' | 'treasure' | 'huarong' | 'recruit'
+export type MapSize = 'small' | 'standard' | 'large' | 'giant'
+
+export const MAP_SIZES: Record<MapSize, { grid: number; boardSize: number }> = {
+  small: { grid: 4, boardSize: 12 },
+  standard: { grid: 5, boardSize: 16 },
+  large: { grid: 6, boardSize: 20 },
+  giant: { grid: 7, boardSize: 24 }
+}
+
+export type TerrainType = 'normal' | 'mountain' | 'water' | 'castle' | 'wasteland'
+export type AreaType = 'wei' | 'shu' | 'wu' | 'neutral'
+export type MapTheme = 'threekingdoms' | 'water margin' | 'investiture' | 'journey'
+
+export interface TerrainEffect {
+  terrain: TerrainType
+  diceModifier: number    // 骰子修正
+  rentModifier: number    // 租金倍率
+  costModifier: number     // 购买价格倍率
+  description: string
+}
+
+export interface AreaBonus {
+  area: AreaType
+  name: string
+  bonusType: 'dice' | 'rent' | 'skill' | 'money'
+  bonusValue: number
+  threshold: number        // 占领多少处触发
+}
+
+// ============== 传送阵系统 ==============
+
+export interface TeleportPair {
+  id: string
+  entryIndex: number
+  exitIndex: number
+  name: string
+}
+
+// ============== 驿站系统 ==============
+
+export interface StationConfig {
+  cost: number           // 使用费用
+  extraMoves: number    // 额外移动步数
+  maxUsesPerTurn: number // 每回合最大使用次数
+}
+
+// ============== 障碍物系统 ==============
+
+export type ObstacleType = 'bandit' | 'construction' | 'ruins'
+
+export interface Obstacle {
+  id: string
+  type: ObstacleType
+  position: number
+  defeated: boolean
+  defeatedBy?: number    // 被哪个玩家击败
+  reward?: number        // 击败奖励
+  rebuildCost?: number   // 重建费用
+}
+
+// ============== 方向系统 ==============
+
+export type Direction = 'forward' | 'backward' | 'left' | 'right' | 'any'
+
+export interface DirectionRestriction {
+  allowed: Direction
+  forcedDirection?: Direction  // 死路时必须走的方向
+  isDeadEnd: boolean
+}
+
+// ============== 命运与机会 ==============
+
+export type FateType = 'global' | 'personal' | 'choice'
+
+export interface FateCard {
+  id: string
+  name: string
+  description: string
+  type: FateType
+  effect: FateEffect
+  icon: string
+}
+
+export interface FateEffect {
+  type: 'money' | 'teleport' | 'skill' | 'weather' | 'obstacle' | 'property'
+  value?: number
+  targetPosition?: number
+  affectAll?: boolean
+  playerId?: number
+}
+
+// ============== 格子类型扩展 ==============
+
+export type CellType =
+  | 'start'
+  | 'property'
+  | 'event'
+  | 'store'
+  | 'tax'
+  | 'ambush'
+  | 'treasure'
+  | 'huarong'
+  | 'recruit'
+  | 'teleport_entry'
+  | 'teleport_exit'
+  | 'station'
+  | 'port'
+  | 'obstacle'
+  | 'fate'
+  | 'opportunity'
+  | 'prison'
+  | 'direction'
 
 export interface EventOption {
   text: string
@@ -90,7 +196,15 @@ export interface EventOption {
   result: string
 }
 
+export interface TreasureEffect {
+  type: 'money' | 'item'
+  weight: number
+  amount?: number
+  itemId?: string
+}
+
 export interface Cell {
+  id: string
   name: string
   type: CellType
   cost?: number
@@ -98,22 +212,28 @@ export interface Cell {
   amount?: number
   eventId?: string
   index?: number
+
   // 地产升级
   level?: PropertyLevel
   maxLevel?: PropertyLevel
-  upgradeCosts?: number[]        // 每级升级费用 [100, 200]
-  rentByLevel?: number[]         // 每级租金 [40, 80, 160]
-  // 事件扩展
-  choice?: boolean               // 是否有选择
-  options?: EventOption[]         // 选择选项
-  effects?: TreasureEffect[]     // 宝箱效果
-}
+  upgradeCosts?: number[]
+  rentByLevel?: number[]
 
-export interface TreasureEffect {
-  type: 'money' | 'item'
-  weight: number                 // 概率权重
-  amount?: number
-  itemId?: string
+  // 事件扩展
+  choice?: boolean
+  options?: EventOption[]
+  effects?: TreasureEffect[]
+
+  // 地图增强
+  terrain?: TerrainType        // 地形类型
+  area?: AreaType             // 所属区域
+  teleportPairId?: string      // 传送阵配对ID
+  stationConfig?: StationConfig // 驿站配置
+  portTargetIndex?: number     // 港口目标格子
+  obstacleId?: string          // 障碍物ID
+  fateCardId?: string          // 命运牌ID
+  directionRestriction?: DirectionRestriction  // 方向限制
+  theme?: MapTheme            // 适用主题
 }
 
 // ============== 玩家扩展 ==============
@@ -126,23 +246,28 @@ export interface Player {
   position: number
   properties: Cell[]
   inGame: boolean
-  // 新增
-  items: PlayerItem[]             // 持有的道具
-  skillLevel: number               // 技能等级 1-3
-  achievements: string[]           // 已解锁成就 ID 列表
-  isAI: boolean                   // 是否为 AI
-  aiConfig?: AIConfig             // AI 配置
-  // 状态
-  shieldActive: boolean           // 免罪符是否激活
-  lastDiceRoll?: number           // 上次骰子点数
-  consecutiveTurnsWithoutBuy: number  // 连续未购买地产回合
+  items: PlayerItem[]
+  skillLevel: number
+  achievements: string[]
+  isAI: boolean
+  aiConfig?: AIConfig
+  shieldActive: boolean
+  lastDiceRoll?: number
+  consecutiveTurnsWithoutBuy: number
+
+  // 地图增强
+  frozenTurns: number          // 冻结回合数
+  areaControl: Record<AreaType, number>  // 各区域占领数
+  usedStations: number          // 本回合已使用驿站次数
+  defeatedObstacles: string[]  // 击败的障碍物ID列表
 }
 
 export interface AIConfig {
-  buyPropertyThreshold: number     // 购买房产的资金阈值比例 (0-1)
-  eventRiskTolerance: number      // 事件风险容忍度 (0-1)
-  upgradeAggression: number        // 升级激进程度 (0-1)
-  itemUsageThreshold: number       // 道具使用阈值
+  buyPropertyThreshold: number
+  eventRiskTolerance: number
+  upgradeAggression: number
+  itemUsageThreshold: number
+  terrainPreference: Record<TerrainType, number>
 }
 
 // ============== 成就系统 ==============
@@ -155,14 +280,8 @@ export interface Achievement {
   description: string
   icon: string
   condition: AchievementCondition
-  reward?: number                 // 金币奖励
-  secret?: boolean                // 是否隐藏
-}
-
-export interface UnlockedAchievement {
-  achievementId: string
-  unlockedAt: number              // 解锁时间戳
-  notified: boolean              // 是否已显示通知
+  reward?: number
+  secret?: boolean
 }
 
 // ============== 游戏配置 ==============
@@ -178,6 +297,13 @@ export interface GameConfig {
   items: Item[]
   weatherEffects: Record<WeatherType, WeatherEffect>
   achievements: Achievement[]
+  mapSize: MapSize
+  mapTheme: MapTheme
+  terrainEffects: Record<TerrainType, TerrainEffect>
+  areaBonuses: AreaBonus[]
+  teleportPairs: TeleportPair[]
+  stations: StationConfig
+  fateCards: FateCard[]
 }
 
 export interface EventConfig {
@@ -201,6 +327,9 @@ export interface GameState {
   messages: string[]
   gameEnded: boolean
   winner: Player | null
+  obstacles: Obstacle[]
+  mapSize: MapSize
+  mapTheme: MapTheme
 }
 
 export interface GameStateContext {
@@ -210,6 +339,8 @@ export interface GameStateContext {
   turnCount: number
   lastEventAmount?: number
   lastPurchaseCount?: number
+  winner?: Player
+  treasureCount?: number
 }
 
 // ============== 游戏事件 ==============
@@ -234,6 +365,13 @@ export type GameEventType =
   | 'PLAYER_BANKRUPT'
   | 'SKILL_UPGRADED'
   | 'UPDATE_WEATHER'
+  | 'TELEPORT'
+  | 'USE_STATION'
+  | 'DEFEAT_OBSTACLE'
+  | 'SHOW_FATE'
+  | 'FREEZE_PLAYER'
+  | 'AREA_BONUS'
+  | 'SHOW_DIRECTION_CHOICE'
 
 export interface GameEvent {
   type: GameEventType
@@ -244,7 +382,7 @@ export type EventHandler = (event: GameEvent) => void
 
 // ============== AI 决策 ==============
 
-export type AIAction = 'buy' | 'upgrade' | 'skip' | 'use_item' | 'accept' | 'reject' | 'buy_item' | 'roll' | 'end_turn'
+export type AIAction = 'buy' | 'upgrade' | 'skip' | 'use_item' | 'accept' | 'reject' | 'buy_item' | 'roll' | 'end_turn' | 'use_station' | 'teleport' | 'defeat_obstacle'
 
 export interface AIDecision {
   action: AIAction
@@ -260,9 +398,32 @@ export interface SavedGame {
   version: number
   players: Player[]
   currentPlayerIndex: number
-  propertyOwners: Record<number, number>
+  propertyOwners: Record<number, { playerId: number; level: PropertyLevel }>
   weather: WeatherType
   turnCount: number
   messages: string[]
   timestamp: number
+  obstacles: Obstacle[]
+  mapSize: MapSize
+  mapTheme: MapTheme
+}
+
+// ============== 地图编辑器 ==============
+
+export interface MapEditorCell {
+  type: CellType
+  name: string
+  cost?: number
+  rent?: number
+  terrain?: TerrainType
+  area?: AreaType
+}
+
+export interface MapPreset {
+  id: string
+  name: string
+  theme: MapTheme
+  size: MapSize
+  cells: MapEditorCell[]
+  description: string
 }

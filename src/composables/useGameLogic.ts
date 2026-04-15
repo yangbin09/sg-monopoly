@@ -1,9 +1,10 @@
 /**
  * useGameLogic.ts - 游戏规则引擎 (Vue 3 composable)
+ * 地图增强版
  */
-import type { GameEvent, Cell, Player, Item, PlayerItem, WeatherType, PropertyLevel, GameStateContext } from '../types/game'
-import { boardCells, events as eventConfig, START_BONUS, ITEMS, WEATHER_EFFECTS, PROPERTY_LEVELS, SKILL_UPGRADE_THRESHOLD } from '../config'
-import type { GameStateReturn } from '../stores/gameState'
+import type { GameEvent, Cell, Player, Item, PlayerItem, WeatherType, PropertyLevel, GameStateContext, Obstacle } from '../types/game'
+import { boardCells, events as eventConfig, START_BONUS, ITEMS, WEATHER_EFFECTS, PROPERTY_LEVELS, STATION_CONFIG, FATE_CARDS, TERRAIN_EFFECTS } from '../config'
+import { useGameStore } from '../stores/gameStore'
 
 export const EventTypes = {
   APPEND_MESSAGE: 'APPEND_MESSAGE',
@@ -24,10 +25,17 @@ export const EventTypes = {
   SHOW_CHOICE: 'SHOW_CHOICE',
   PLAYER_BANKRUPT: 'PLAYER_BANKRUPT',
   SKILL_UPGRADED: 'SKILL_UPGRADED',
-  UPDATE_WEATHER: 'UPDATE_WEATHER'
-}
+  UPDATE_WEATHER: 'UPDATE_WEATHER',
+  TELEPORT: 'TELEPORT',
+  USE_STATION: 'USE_STATION',
+  DEFEAT_OBSTACLE: 'DEFEAT_OBSTACLE',
+  SHOW_FATE: 'SHOW_FATE',
+  FREEZE_PLAYER: 'FREEZE_PLAYER',
+  AREA_BONUS: 'AREA_BONUS',
+  SHOW_DIRECTION_CHOICE: 'SHOW_DIRECTION_CHOICE'
+} as const
 
-export function useGameLogic(gameState: GameStateReturn) {
+export function useGameLogic(gameStore = useGameStore()) {
 
   // 创建道具实例
   function createItem(itemId: string): Item | undefined {
@@ -66,7 +74,6 @@ export function useGameLogic(gameState: GameStateReturn) {
       case 'event':
         if (action === 'event' && context.amount !== undefined && context.amount < 0) {
           if (char.skillImmune) {
-            // 检查反弹
             if (char.skillBounce && player.skillLevel >= 2) {
               const bounceAmount = Math.floor(Math.abs(context.amount) * (player.skillLevel >= 3 ? 1 : 0.5))
               return { cancel: true, bounce: bounceAmount }
@@ -79,22 +86,33 @@ export function useGameLogic(gameState: GameStateReturn) {
     return null
   }
 
-  // 计算租金（考虑等级和天气）
+  // 计算租金（考虑等级、天气、地形）
   function calculateRent(cellData: Cell, weatherMod: number = 1): number {
     const baseRent = cellData.rent ?? 0
     const level = cellData.level ?? 0
     const levelConfig = PROPERTY_LEVELS[level]
     const rentMultiplier = levelConfig?.rentMultiplier ?? 1.0
 
-    const weather = WEATHER_EFFECTS[gameState.state.weather]
+    const weather = WEATHER_EFFECTS[gameStore.weather]
     const weatherRentMod = weather?.rentModifier ?? 1.0
 
-    return Math.floor(baseRent * rentMultiplier * weatherMod * weatherRentMod)
+    const terrainEffect = gameStore.getTerrainEffect(cellData)
+    const terrainRentMod = terrainEffect?.rentModifier ?? 1.0
+
+    return Math.floor(baseRent * rentMultiplier * weatherMod * weatherRentMod * terrainRentMod)
+  }
+
+  // 计算购买价格（考虑地形）
+  function calculateCost(cellData: Cell): number {
+    const baseCost = cellData.cost ?? 0
+    const terrainEffect = gameStore.getTerrainEffect(cellData)
+    const costMultiplier = terrainEffect?.costModifier ?? 1.0
+    return Math.floor(baseCost * costMultiplier)
   }
 
   // 支付金币
-  function payMoney(from: Player, to: Player | null, amount: number, events: GameEvent[]) {
-    if (!from.inGame) return
+  function payMoney(from: Player, to: Player | null, amount: number): boolean {
+    if (!from.inGame) return false
     from.money -= amount
     if (to) {
       to.money += amount
@@ -102,32 +120,31 @@ export function useGameLogic(gameState: GameStateReturn) {
     if (from.money < 0) {
       from.inGame = false
       from.properties = []
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${from.character.name}破产，退出游戏！` })
-      events.push({ type: EventTypes.PLAYER_BANKRUPT, payload: { playerId: from.id } })
-      gameState.removePropertyOwners(from.id)
-      checkGameEnd(events)
+      gameStore.addMessage(`${from.character.name}破产，退出游戏！`)
+      gameStore.removePropertyOwners(from.id)
+      checkGameEnd()
+      return false
     }
+    return true
   }
 
   // 检查游戏结束
-  function checkGameEnd(events: GameEvent[]) {
-    const alivePlayers = gameState.getAlivePlayers()
+  function checkGameEnd() {
+    const alivePlayers = gameStore.getAlivePlayers()
     if (alivePlayers.length <= 1) {
-      gameState.state.gameInProgress = false
-      gameState.state.gameEnded = true
+      gameStore.gameInProgress = false
+      gameStore.gameEnded = true
       if (alivePlayers.length === 1) {
-        gameState.state.winner = alivePlayers[0]
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `游戏结束！${alivePlayers[0].character.name}获得胜利！` })
+        gameStore.winner = alivePlayers[0]
+        gameStore.addMessage(`游戏结束！${alivePlayers[0].character.name}获得胜利！`)
       } else {
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: '游戏结束！所有玩家都破产。' })
+        gameStore.addMessage('游戏结束！所有玩家都破产。')
       }
-      events.push({ type: EventTypes.GAME_END })
     }
   }
 
   // 处理格子动作
   function handleCellAction(player: Player, cellData: Cell, events: GameEvent[]) {
-    const ctx = getGameContext()
     switch (cellData.type) {
       case 'start':
         events.push({ type: EventTypes.UPDATE_SCOREBOARD })
@@ -153,186 +170,115 @@ export function useGameLogic(gameState: GameStateReturn) {
       case 'recruit':
         handleRecruit(player, cellData, events)
         break
+      case 'teleport_entry':
+        handleTeleport(player, cellData, events)
+        break
+      case 'station':
+        handleStation(player, cellData, events)
+        break
+      case 'port':
+        handlePort(player, cellData, events)
+        break
+      case 'obstacle':
+        handleObstacle(player, cellData, events)
+        break
+      case 'fate':
+      case 'opportunity':
+        handleFate(player, cellData, events)
+        break
+      case 'prison':
+        handlePrison(player, cellData, events)
+        break
     }
-    // 检查成就
-    checkAchievements(player, ctx, events)
-  }
-
-  // 获取游戏上下文（用于成就判定）
-  function getGameContext(): GameStateContext {
-    return {
-      players: gameState.state.players,
-      currentPlayerIndex: gameState.state.currentPlayerIndex,
-      weather: gameState.state.weather,
-      turnCount: gameState.state.turnCount,
-      treasureCount: gameState.state.treasureCount
-    }
-  }
-
-  // 检查成就
-  function checkAchievements(player: Player, ctx: GameStateContext, events: GameEvent[]) {
-    const { ACHIEVEMENTS } = require('../config')
-    for (const achievement of ACHIEVEMENTS) {
-      if (!player.achievements.includes(achievement.id)) {
-        ctx.winner = gameState.state.winner ?? undefined
-        if (achievement.condition(ctx)) {
-          gameState.unlockAchievement(player.id, achievement.id)
-          if (achievement.reward) {
-            player.money += achievement.reward
-          }
-          events.push({
-            type: EventTypes.SHOW_ACHIEVEMENT,
-            payload: {
-              playerId: player.id,
-              achievement
-            }
-          })
-        }
-      }
-    }
+    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
   }
 
   // 处理地产
   function handleProperty(player: Player, cellData: Cell, events: GameEvent[]) {
-    const cellIndex = cellData.index ?? boardCells.indexOf(cellData)
-    const ownerId = gameState.getPropertyOwner(cellIndex)
+    const cellIndex = cellData.index ?? 0
+    const owner = gameStore.getPropertyOwner(cellIndex)
 
-    if (!ownerId) {
-      // 无主地产，可购买
-      if (player.money >= (cellData.cost ?? 0)) {
-        player.money -= cellData.cost ?? 0
-        const newCell = { ...cellData, level: 0 as PropertyLevel }
-        player.properties.push(newCell)
-        gameState.setPropertyOwner(cellIndex, player.id, 0)
+    if (!owner) {
+      const cost = calculateCost(cellData)
+      if (player.money >= cost) {
+        player.money -= cost
+        player.properties.push({ ...cellData, level: 0 as PropertyLevel })
+        gameStore.setPropertyOwner(cellIndex, player.id, 0)
         player.consecutiveTurnsWithoutBuy = 0
+        gameStore.addMessage(`${player.character.name}购买了${cellData.name}！`)
 
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}购买了${cellData.name}！` })
-
-        // 技能效果
         const skillResult = applySkill(player, 'buyProperty', {})
         if (skillResult?.moneyChange) {
           player.money += skillResult.moneyChange
           if (skillResult.message) {
-            events.push({ type: EventTypes.APPEND_MESSAGE, payload: skillResult.message })
+            gameStore.addMessage(skillResult.message)
           }
         }
 
-        // 检查技能升级
-        if (gameState.checkSkillUpgrade(player.id)) {
-          events.push({
-            type: EventTypes.SKILL_UPGRADED,
-            payload: { playerId: player.id, newLevel: player.skillLevel }
-          })
-          events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}的技能升级到${player.skillLevel}级！` })
+        if (gameStore.checkSkillUpgrade(player.id)) {
+          events.push({ type: EventTypes.SKILL_UPGRADED, payload: { playerId: player.id, newLevel: player.skillLevel } })
+          gameStore.addMessage(`${player.character.name}的技能升级到${player.skillLevel}级！`)
         }
       } else {
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}的资金不足，无法购买！` })
+        gameStore.addMessage(`${player.character.name}的资金不足，无法购买！`)
         player.consecutiveTurnsWithoutBuy++
       }
-    } else if (ownerId === player.id) {
-      // 自己的地产
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}抵达自己拥有的${cellData.name}。` })
-      // 显示升级选项
-      const level = cellData.level ?? 0
-      if (level < (cellData.maxLevel ?? 3)) {
-        const upgradeCost = cellData.upgradeCosts?.[level]
-        if (upgradeCost && player.money >= upgradeCost) {
-          events.push({ type: EventTypes.APPEND_MESSAGE, payload: `是否花费${upgradeCost}金币升级${cellData.name}？` })
-        }
-      }
+    } else if (owner.playerId === player.id) {
+      gameStore.addMessage(`${player.character.name}抵达自己拥有的${cellData.name}。`)
     } else {
-      // 需支付租金
-      const owner = gameState.getPlayerById(ownerId)
-      let rent = calculateRent(cellData)
-
-      // 检查免罪符
+      const ownerPlayer = gameStore.getPlayerById(owner.playerId)
       if (player.shieldActive) {
         player.shieldActive = false
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}使用免罪符免疫了租金！` })
+        gameStore.addMessage(`${player.character.name}使用免罪符免疫了租金！`)
       } else {
+        let rent = calculateRent(cellData)
+
         const skillResult = applySkill(player, 'payRent', { amount: rent })
         if (skillResult) {
           rent = skillResult.amount ?? rent
           if (skillResult.message) {
-            events.push({ type: EventTypes.APPEND_MESSAGE, payload: skillResult.message })
+            gameStore.addMessage(skillResult.message)
           }
         }
 
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}抵达${cellData.name}，需向${owner?.character.name}支付租金¥${rent}。` })
-        payMoney(player, owner ?? null, rent, events)
+        gameStore.addMessage(`${player.character.name}抵达${cellData.name}，需向${ownerPlayer?.character.name}支付租金¥${rent}。`)
+        payMoney(player, ownerPlayer ?? null, rent)
       }
     }
-    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
-  }
-
-  // 升级地产
-  function upgradeProperty(player: Player, cellIndex: number, events: GameEvent[]) {
-    const cell = player.properties.find(p => p.index === cellIndex)
-    if (!cell) return
-
-    const level = cell.level ?? 0
-    if (level >= (cell.maxLevel ?? 3)) {
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${cell.name}已达最高等级！` })
-      return
-    }
-
-    const upgradeCost = cell.upgradeCosts?.[level]
-    if (!upgradeCost || player.money < upgradeCost) {
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `金币不足，无法升级！` })
-      return
-    }
-
-    player.money -= upgradeCost
-    cell.level = (level + 1) as PropertyLevel
-
-    const newLevelName = PROPERTY_LEVELS[cell.level!].name
-    events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}将${cell.name}升级为${newLevelName}！` })
-    events.push({ type: EventTypes.UPGRADE_PROPERTY, payload: { cellIndex, newLevel: cell.level } })
-    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
   }
 
   // 处理事件
   function handleEvent(player: Player, cellData: Cell, events: GameEvent[]) {
     const eventData = eventConfig[cellData.eventId ?? '']
     if (!eventData) {
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}触发${cellData.name}，未知事件。` })
-      events.push({ type: EventTypes.UPDATE_SCOREBOARD })
+      gameStore.addMessage(`${player.character.name}触发${cellData.name}，未知事件。`)
       return
     }
 
-    const ctx = getGameContext()
-    ctx.lastEventAmount = eventData.amount ?? 0
-
-    // 检查免罪符
     if (player.shieldActive && (eventData.amount ?? 0) < 0) {
       player.shieldActive = false
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}使用免罪符免疫了负面影响！` })
-      checkAchievements(player, ctx, events)
-      events.push({ type: EventTypes.UPDATE_SCOREBOARD })
+      gameStore.addMessage(`${player.character.name}使用免罪符免疫了负面影响！`)
       return
     }
 
-    // 技能免疫
     const skillResult = applySkill(player, 'event', { amount: eventData.amount })
     if (skillResult?.cancel) {
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}触发${cellData.name}，但技能免疫负面影响。` })
+      gameStore.addMessage(`${player.character.name}触发${cellData.name}，但技能免疫负面影响。`)
       if (skillResult.bounce) {
         player.money += skillResult.bounce
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `反弹效果：获得${skillResult.bounce}金币！` })
+        gameStore.addMessage(`反弹效果：获得${skillResult.bounce}金币！`)
       }
     } else {
       const amount = eventData.amount ?? 0
       if (amount >= 0) {
         player.money += amount
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}触发${cellData.name}：${eventData.description}` })
+        gameStore.addMessage(`${player.character.name}触发${cellData.name}：${eventData.description}`)
       } else {
         const loss = -amount
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}触发${cellData.name}：${eventData.description}` })
-        payMoney(player, null, loss, events)
+        gameStore.addMessage(`${player.character.name}触发${cellData.name}：${eventData.description}`)
+        payMoney(player, null, loss)
       }
     }
-    checkAchievements(player, ctx, events)
-    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
   }
 
   // 处理宝箱
@@ -340,9 +286,8 @@ export function useGameLogic(gameState: GameStateReturn) {
     const eventData = eventConfig.treasure
     if (!eventData?.effects) return
 
-    gameState.state.treasureCount++
+    gameStore.treasureCount++
 
-    // 随机抽取效果
     const totalWeight = eventData.effects.reduce((sum, e) => sum + e.weight, 0)
     let random = Math.random() * totalWeight
 
@@ -351,33 +296,24 @@ export function useGameLogic(gameState: GameStateReturn) {
       if (random <= 0) {
         if (effect.type === 'money') {
           player.money += effect.amount ?? 0
-          events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}开启宝箱：获得${effect.amount}金币！` })
+          gameStore.addMessage(`${player.character.name}开启宝箱：获得${effect.amount}金币！`)
         } else if (effect.type === 'item') {
           const item = createItem(effect.itemId!)
           if (item) {
-            const playerItem: PlayerItem = { ...item, ownedAt: Date.now() }
-            gameState.addItem(player.id, playerItem)
-            events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}开启宝箱：获得${item.icon}${item.name}！` })
+            gameStore.addItem(player.id, { ...item, ownedAt: Date.now() })
+            gameStore.addMessage(`${player.character.name}开启宝箱：获得${item.icon}${item.name}！`)
           }
         }
         break
       }
     }
-
-    const ctx = getGameContext()
-    checkAchievements(player, ctx, events)
-    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
   }
 
-  // 处理华容道（选择事件）
+  // 处理华容道
   function handleHuarong(player: Player, cellData: Cell, events: GameEvent[]) {
     const eventData = eventConfig.huarong
-    if (!eventData?.options) {
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}触发华容道，但事件配置错误。` })
-      return
-    }
+    if (!eventData?.options) return
 
-    // 显示选择给玩家
     events.push({
       type: EventTypes.SHOW_CHOICE,
       payload: {
@@ -388,92 +324,208 @@ export function useGameLogic(gameState: GameStateReturn) {
     })
   }
 
-  // 处理华容道选择结果
-  function handleHuarongChoice(playerId: number, cellIndex: number, choiceIndex: number, events: GameEvent[]) {
-    const player = gameState.getPlayerById(playerId)
-    if (!player) return
-
-    const eventData = eventConfig.huarong
-    if (!eventData?.options?.[choiceIndex]) return
-
-    const option = eventData.options[choiceIndex]
-    events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}选择${option.text}：${option.result}` })
-
-    if (option.effect.amount) {
-      const amount = option.effect.amount
-      if (amount >= 0) {
-        player.money += amount
-      } else {
-        payMoney(player, null, -amount, events)
-      }
-    }
-
-    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
-  }
-
   // 处理招募
   function handleRecruit(player: Player, cellData: Cell, events: GameEvent[]) {
-    const eventData = eventConfig.recruit
-    const amount = eventData?.amount ?? 30
-
+    const amount = 30
     player.money += amount
-    events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}招募士兵，获得${amount}金币战力支持！` })
-    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
+    gameStore.addMessage(`${player.character.name}招募士兵，获得${amount}金币战力支持！`)
+  }
+
+  // 处理传送阵
+  function handleTeleport(player: Player, cellData: Cell, events: GameEvent[]) {
+    const exitIndex = gameStore.getTeleportExit(cellData.index ?? 0)
+    if (exitIndex !== null) {
+      events.push({ type: EventTypes.TELEPORT, payload: { from: cellData.index, to: exitIndex } })
+    }
+  }
+
+  // 处理驿站
+  function handleStation(player: Player, cellData: Cell, events: GameEvent[]) {
+    if (gameStore.useStation(player)) {
+      events.push({ type: EventTypes.USE_STATION })
+    }
+  }
+
+  // 处理港口
+  function handlePort(player: Player, cellData: Cell, events: GameEvent[]) {
+    if (cellData.portTargetIndex !== undefined) {
+      const passageCost = TERRAIN_EFFECTS.water.passageCost ?? 10
+      if (player.money >= passageCost) {
+        player.money -= passageCost
+        gameStore.addMessage(`${player.character.name}使用港口，支付${passageCost}金币船费`)
+        events.push({ type: EventTypes.TELEPORT, payload: { from: cellData.index, to: cellData.portTargetIndex } })
+      } else {
+        gameStore.addMessage(`${player.character.name}金币不足，无法使用港口`)
+      }
+    }
+  }
+
+  // 处理障碍物
+  function handleObstacle(player: Player, cellData: Cell, events: GameEvent[]) {
+    const obstacle = gameStore.getObstacleAt(cellData.index ?? 0)
+    if (obstacle && !obstacle.defeated) {
+      if (player.money >= (obstacle.reward ?? 0)) {
+        gameStore.defeatObstacle(player.id, gameStore.obstacles.findIndex(o => o === obstacle))
+        player.defeatedObstacles.push(obstacle.id)
+      } else {
+        gameStore.addMessage(`${player.character.name}金币不足，无法击败障碍物`)
+      }
+    }
+  }
+
+  // 处理命运牌
+  function handleFate(player: Player, cellData: Cell, events: GameEvent[]) {
+    const randomIndex = Math.floor(Math.random() * FATE_CARDS.length)
+    const card = FATE_CARDS[randomIndex]
+
+    gameStore.addMessage(`${player.character.name}抽取命运牌：${card.icon}${card.name} - ${card.description}`)
+    events.push({ type: EventTypes.SHOW_FATE, payload: { card, playerId: player.id } })
+
+    switch (card.effect.type) {
+      case 'money':
+        if (card.effect.affectAll) {
+          gameStore.players.forEach(p => {
+            if (p.id !== player.id && p.inGame) {
+              p.money += card.effect.value ?? 0
+              gameStore.addMessage(`${p.character.name}损失${Math.abs(card.effect.value ?? 0)}金币`)
+            }
+          })
+        } else {
+          player.money += card.effect.value ?? 0
+        }
+        break
+      case 'weather':
+        const weatherTypes: WeatherType[] = ['sunny', 'rainy', 'foggy', 'stormy']
+        gameStore.weather = weatherTypes[card.effect.value ?? 0]
+        break
+      case 'skill':
+        if (player.skillLevel < 3) {
+          player.skillLevel++
+          gameStore.addMessage(`${player.character.name}技能升级到${player.skillLevel}级`)
+        }
+        break
+      case 'freeze':
+        const targetIndex = (gameStore.currentPlayerIndex + 1) % gameStore.players.length
+        gameStore.freezePlayer(gameStore.players[targetIndex].id, 1)
+        break
+    }
+  }
+
+  // 处理监狱
+  function handlePrison(player: Player, cellData: Cell, events: GameEvent[]) {
+    player.frozenTurns += 1
+    gameStore.addMessage(`${player.character.name}被关进监狱，停留1回合`)
+    events.push({ type: EventTypes.FREEZE_PLAYER, payload: { playerId: player.id, turns: 1 } })
   }
 
   // 处理税收
   function handleTax(player: Player, cellData: Cell, events: GameEvent[]) {
-    // 检查免罪符
     if (player.shieldActive) {
       player.shieldActive = false
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}使用免罪符免疫了税收！` })
+      gameStore.addMessage(`${player.character.name}使用免罪符免疫了税收！`)
     } else {
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}需要缴纳税收¥${cellData.amount}。` })
-      payMoney(player, null, cellData.amount ?? 50, events)
+      gameStore.addMessage(`${player.character.name}需要缴纳税收¥${cellData.amount ?? 50}。`)
+      payMoney(player, null, cellData.amount ?? 50)
     }
-    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
   }
 
   // 移动玩家
   function movePlayer(player: Player, steps: number, events: GameEvent[]) {
     const oldPos = player.position
-    const newPos = (oldPos + steps) % boardCells.length
+    const boardSize = gameStore.currentBoardCells.length
+    const newPos = (oldPos + steps) % boardSize
 
-    // 经过起点
     if (newPos <= oldPos) {
       player.money += START_BONUS
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}经过起点，获得200金币！` })
+      gameStore.addMessage(`${player.character.name}经过起点，获得200金币！`)
     }
 
     player.position = newPos
-    player.lastDiceRoll = steps
     events.push({ type: EventTypes.UPDATE_TOKENS })
-    handleCellAction(player, boardCells[newPos], events)
+
+    // 检查地形效果
+    const terrainEffect = gameStore.getTerrainEffect(gameStore.currentBoardCells[newPos])
+    if (terrainEffect.diceModifier !== 0) {
+      gameStore.addMessage(`地形效果：${terrainEffect.description}`)
+    }
+
+    handleCellAction(player, gameStore.currentBoardCells[newPos], events)
+  }
+
+  // 移动到指定位置（传送）
+  function teleportTo(player: Player, targetIndex: number, events: GameEvent[]) {
+    player.position = targetIndex
+    gameStore.addMessage(`${player.character.name}被传送至${gameStore.currentBoardCells[targetIndex]?.name}`)
+    events.push({ type: EventTypes.UPDATE_TOKENS })
+    handleCellAction(player, gameStore.currentBoardCells[targetIndex], events)
+  }
+
+  // 掷骰子
+  function rollDice(): GameEvent[] {
+    const events: GameEvent[] = []
+    if (!gameStore.gameInProgress) return events
+
+    events.push({ type: EventTypes.ROLL_BUTTON_ENABLED, payload: false })
+    events.push({ type: EventTypes.CLEAR_MESSAGE })
+
+    const player = gameStore.currentPlayer
+    if (!player || !player.inGame) {
+      return events
+    }
+
+    let roll = Math.floor(Math.random() * 6) + 1
+
+    // 天气修正
+    const weather = WEATHER_EFFECTS[gameStore.weather]
+    if (weather?.diceModifier) {
+      roll = Math.max(1, roll + weather.diceModifier)
+    }
+
+    // 技能效果
+    const skillResult = applySkill(player, 'rollDice', { roll })
+    if (skillResult) {
+      roll = skillResult.roll ?? roll
+      if (skillResult.message) {
+        gameStore.addMessage(skillResult.message)
+      }
+    }
+
+    events.push({ type: EventTypes.UPDATE_DICE, payload: roll })
+    gameStore.addMessage(`${player.character.name}掷出了${roll}点`)
+
+    movePlayer(player, roll, events)
+
+    return events
+  }
+
+  // 下一回合
+  function nextTurnLogic(): GameEvent[] {
+    const events: GameEvent[] = []
+    if (!gameStore.gameInProgress) return events
+
+    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
+    gameStore.nextTurn()
+    const nextPlayer = gameStore.currentPlayer
+    if (nextPlayer) {
+      events.push({ type: EventTypes.ROLL_BUTTON_ENABLED, payload: true })
+      gameStore.addMessage(`轮到${nextPlayer.character.name}行动。`)
+    }
+    return events
   }
 
   // 购买道具
-  function buyItem(player: Player, itemId: string, events: GameEvent[]): boolean {
+  function buyItem(player: Player, itemId: string): boolean {
     const item = createItem(itemId)
     if (!item) return false
 
     if (player.money < item.cost) {
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}金币不足，无法购买${item.name}！` })
+      gameStore.addMessage(`${player.character.name}金币不足，无法购买${item.name}！`)
       return false
     }
 
     player.money -= item.cost
-    const playerItem: PlayerItem = { ...item, ownedAt: Date.now() }
-    gameState.addItem(player.id, playerItem)
-
-    events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}购买了${item.icon}${item.name}！` })
-    events.push({ type: EventTypes.BUY_ITEM, payload: { playerId: player.id, item } })
-    events.push({ type: EventTypes.HIDE_STORE })
-    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
-
-    // 检查成就
-    const ctx = getGameContext()
-    checkAchievements(player, ctx, events)
-
+    gameStore.addItem(player.id, { ...item, ownedAt: Date.now() })
+    gameStore.addMessage(`${player.character.name}购买了${item.icon}${item.name}！`)
     return true
   }
 
@@ -488,150 +540,53 @@ export function useGameLogic(gameState: GameStateReturn) {
     switch (item.type) {
       case 'dice':
         player.lastDiceRoll = item.value
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}使用${item.icon}${item.name}，指定骰子为${item.value}点！` })
+        gameStore.addMessage(`${player.character.name}使用${item.icon}${item.name}，指定骰子为${item.value}点！`)
         events.push({ type: EventTypes.UPDATE_DICE, payload: item.value })
         break
-
       case 'shield':
         player.shieldActive = true
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}使用${item.icon}${item.name}，免疫下一次负面效果！` })
+        gameStore.addMessage(`${player.character.name}使用${item.icon}${item.name}，免疫下一次负面效果！`)
         break
-
       case 'steal':
-        const alivePlayers = gameState.getAlivePlayers().filter(p => p.id !== player.id)
+        const alivePlayers = gameStore.getAlivePlayers().filter(p => p.id !== player.id)
         if (alivePlayers.length > 0) {
           const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)]
           const stealAmount = Math.min(item.value, target.money)
           target.money -= stealAmount
           player.money += stealAmount
-          events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}使用${item.icon}${item.name}，从${target.character.name}抢夺${stealAmount}金币！` })
+          gameStore.addMessage(`${player.character.name}使用${item.icon}${item.name}，从${target.character.name}抢夺${stealAmount}金币！`)
         }
         break
-
-      case 'teleport':
-        // 需要指定目标地产，在 UI 层处理
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}使用${item.icon}${item.name}，请选择传送目标！` })
+      case 'freeze':
+        const targetIndex = (gameStore.currentPlayerIndex + 1) % gameStore.players.length
+        gameStore.freezePlayer(gameStore.players[targetIndex].id, item.value)
+        gameStore.addMessage(`${player.character.name}使用${item.icon}${item.name}，冻结对手1回合！`)
         break
-
+      case 'reverse':
+        const otherPlayers = gameStore.getAlivePlayers().filter(p => p.id !== player.id)
+        if (otherPlayers.length > 0) {
+          const target = otherPlayers[Math.floor(Math.random() * otherPlayers.length)]
+          const tempPos = player.position
+          player.position = target.position
+          target.position = tempPos
+          gameStore.addMessage(`${player.character.name}使用${item.icon}${item.name}，与${target.character.name}交换位置！`)
+          events.push({ type: EventTypes.UPDATE_TOKENS })
+        }
+        break
+      case 'teleport':
+        gameStore.addMessage(`${player.character.name}使用${item.icon}${item.name}，请选择传送目标！`)
+        break
       case 'luck':
         if (player.lastDiceRoll) {
           player.lastDiceRoll += item.value
-          events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}使用${item.icon}${item.name}，本回合骰子+${item.value}！` })
+          gameStore.addMessage(`${player.character.name}使用${item.icon}${item.name}，本回合骰子+${item.value}！`)
           events.push({ type: EventTypes.UPDATE_DICE, payload: player.lastDiceRoll })
         }
         break
     }
 
     events.push({ type: EventTypes.USE_ITEM, payload: { playerId: player.id, itemId } })
-    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
     return true
-  }
-
-  // 选择角色
-  function selectCharacter(character: any, existingCharacters: any[], events: GameEvent[] = []) {
-    if (gameState.state.gameInProgress) {
-      return events
-    }
-    const existingPlayer = gameState.state.players.find(p => p.character.id === character.id)
-    if (existingPlayer) {
-      events.push({
-        type: EventTypes.APPEND_MESSAGE,
-        payload: '该角色已被选择，请选其他英雄！'
-      })
-      return events
-    }
-
-    gameState.addPlayer(character, false)
-    if (gameState.state.selectingPlayerIndex < 2) {
-      const msg = `已选择 ${gameState.state.players.length} 名玩家，继续选择玩家 ${gameState.state.selectingPlayerIndex + 1} 的角色`
-      events.push({ type: 'UPDATE_SELECTION_INFO', payload: msg })
-    } else {
-      events.push({ type: EventTypes.SHOW_GAME })
-      startGame(events)
-    }
-    return events
-  }
-
-  // 开始游戏
-  function startGame(events: GameEvent[]) {
-    gameState.state.gameInProgress = true
-    events.push({ type: EventTypes.UPDATE_TOKENS })
-    events.push({ type: EventTypes.UPDATE_SCOREBOARD })
-    events.push({ type: EventTypes.ROLL_BUTTON_ENABLED, payload: true })
-    events.push({ type: EventTypes.APPEND_MESSAGE, payload: '游戏开始！玩家1先行动。' })
-    events.push({ type: EventTypes.UPDATE_WEATHER, payload: gameState.state.weather })
-  }
-
-  // 掷骰子
-  function rollDice(): GameEvent[] {
-    const events: GameEvent[] = []
-    if (!gameState.state.gameInProgress) return events
-
-    events.push({ type: EventTypes.ROLL_BUTTON_ENABLED, payload: false })
-    events.push({ type: EventTypes.CLEAR_MESSAGE })
-
-    const player = gameState.getCurrentPlayer()
-    if (!player || !player.inGame) {
-      return nextTurnLogic()
-    }
-
-    // 使用道具指定的点数或随机
-    let roll = player.lastDiceRoll ?? (Math.floor(Math.random() * 6) + 1)
-    player.lastDiceRoll = undefined  // 清除
-
-    // 天气修正
-    const weather = WEATHER_EFFECTS[gameState.state.weather]
-    if (weather?.diceModifier) {
-      roll = Math.max(1, roll + weather.diceModifier)
-    }
-
-    // 技能效果
-    const skillResult = applySkill(player, 'rollDice', { roll })
-    if (skillResult) {
-      roll = skillResult.roll ?? roll
-      if (skillResult.message) {
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: skillResult.message })
-      }
-    }
-
-    // 幸运符效果
-    for (const item of player.items) {
-      if (item.type === 'luck') {
-        roll += item.value
-        events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}的幸运符生效，+${item.value}点！` })
-        player.items = player.items.filter(i => i.id !== item.id)
-        break
-      }
-    }
-
-    events.push({ type: EventTypes.UPDATE_DICE, payload: roll })
-    events.push({ type: EventTypes.APPEND_MESSAGE, payload: `${player.character.name}掷出了${roll}点` })
-
-    movePlayer(player, roll, events)
-
-    return events
-  }
-
-  // 下一回合逻辑
-  function nextTurnLogic(): GameEvent[] {
-    const events: GameEvent[] = []
-    if (!gameState.state.gameInProgress) return events
-
-    events.push({ type: EventTypes.UPDATE_SCOREBOARD, payload: gameState.state.currentPlayerIndex })
-    const nextPlayer = gameState.nextTurn()
-    if (nextPlayer) {
-      events.push({ type: EventTypes.ROLL_BUTTON_ENABLED, payload: true })
-      events.push({ type: EventTypes.APPEND_MESSAGE, payload: `轮到${nextPlayer.character.name}行动。` })
-      events.push({ type: EventTypes.UPDATE_WEATHER, payload: gameState.state.weather })
-    }
-    return events
-  }
-
-  // AI 回合计数
-  function executeAITurn(): GameEvent[] {
-    // AI 逻辑由 useAI 模块处理，这里只做基础验证
-    const events = nextTurnLogic()
-    return events
   }
 
   return {
@@ -639,16 +594,41 @@ export function useGameLogic(gameState: GameStateReturn) {
     startGame,
     rollDice,
     nextTurnLogic,
-    executeAITurn,
     applySkill,
     checkGameEnd,
     buyItem,
     useItem,
-    upgradeProperty,
-    handleHuarongChoice,
+    movePlayer,
+    teleportTo,
     handleCellAction,
     calculateRent,
-    getGameContext,
+    calculateCost,
     EventTypes
+  }
+
+  // 以下是补充的函数
+  function selectCharacter(character: any): GameEvent[] {
+    const events: GameEvent[] = []
+    if (gameStore.gameInProgress) return events
+
+    const existingPlayer = gameStore.players.find(p => p.character.id === character.id)
+    if (existingPlayer) {
+      gameStore.addMessage('该角色已被选择，请选其他英雄！')
+      return events
+    }
+
+    gameStore.addPlayer(character)
+
+    if (gameStore.selectingPlayerIndex < 2) {
+      gameStore.addMessage(`已选择 ${gameStore.players.length} 名玩家，继续选择玩家 ${gameStore.selectingPlayerIndex + 1} 的角色`)
+    } else {
+      startGame()
+      gameStore.addMessage('游戏开始！玩家1先行动。')
+    }
+    return events
+  }
+
+  function startGame() {
+    gameStore.startGame()
   }
 }

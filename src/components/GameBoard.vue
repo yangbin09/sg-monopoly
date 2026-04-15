@@ -33,6 +33,23 @@
               <div v-else-if="cell.type === 'treasure'" class="cell-icon">📦</div>
               <div v-else-if="cell.type === 'huarong'" class="cell-icon">⚔️</div>
               <div v-else-if="cell.type === 'recruit'" class="cell-icon">👥</div>
+              <div v-else-if="cell.type === 'teleport_entry'" class="cell-icon">🌀</div>
+              <div v-else-if="cell.type === 'teleport_exit'" class="cell-icon">🔄</div>
+              <div v-else-if="cell.type === 'station'" class="cell-icon">🏨</div>
+              <div v-else-if="cell.type === 'port'" class="cell-icon">⚓</div>
+              <div v-else-if="cell.type === 'fate'" class="cell-icon">🎴</div>
+              <div v-else-if="cell.type === 'obstacle'" class="cell-icon">🪨</div>
+              <div v-else-if="cell.type === 'prison'" class="cell-icon">⛓️</div>
+
+              <!-- 地形指示器 -->
+              <div v-if="cell.terrain && cell.terrain !== 'normal'" class="terrain-indicator">
+                {{ getTerrainIcon(cell.terrain) }}
+              </div>
+
+              <!-- 区域指示器 -->
+              <div v-if="cell.area && cell.area !== 'neutral'" class="area-indicator" :class="'area-' + cell.area">
+                {{ getAreaName(cell.area) }}
+              </div>
 
               <div class="owner-indicator" v-if="getOwnerName(cell.index)">
                 <span :class="'owner-' + getOwnerId(cell.index)">
@@ -194,6 +211,28 @@ function getLevelName(level: PropertyLevel): string {
   return PROPERTY_LEVELS[level]?.name ?? ''
 }
 
+function getTerrainIcon(terrain?: string): string {
+  if (!terrain) return ''
+  const icons: Record<string, string> = {
+    mountain: '⛰️',
+    water: '🌊',
+    castle: '🏯',
+    wasteland: '🏜️'
+  }
+  return icons[terrain] ?? ''
+}
+
+function getAreaName(area?: string): string {
+  if (!area) return ''
+  const names: Record<string, string> = {
+    wei: '魏',
+    shu: '蜀',
+    wu: '吴',
+    neutral: ''
+  }
+  return names[area] ?? ''
+}
+
 function getOwnerName(cellIndex: number): string | null {
   const cell = boardCells[cellIndex]
   if (cell?.type !== 'property') return null
@@ -310,6 +349,52 @@ function getOwnerId(cellIndex: number): number | null {
   background: rgba(60, 179, 113, 0.2);
 }
 
+.cell.teleport_entry,
+.cell.teleport_exit {
+  background: rgba(138, 43, 226, 0.2);
+}
+
+.cell.station {
+  background: rgba(139, 69, 19, 0.3);
+}
+
+.cell.port {
+  background: rgba(30, 144, 255, 0.2);
+}
+
+.cell.fate {
+  background: rgba(147, 112, 219, 0.2);
+}
+
+.cell.obstacle {
+  background: rgba(105, 105, 105, 0.3);
+}
+
+.cell.prison {
+  background: rgba(128, 128, 128, 0.3);
+}
+
+/* 地形样式 */
+.cell.terrain-mountain {
+  border-color: #8b4513 !important;
+  background: linear-gradient(135deg, rgba(139, 69, 19, 0.3) 0%, rgba(20, 15, 10, 0.85) 100%);
+}
+
+.cell.terrain-water {
+  border-color: #1e90ff !important;
+  background: linear-gradient(135deg, rgba(30, 144, 255, 0.3) 0%, rgba(20, 15, 10, 0.85) 100%);
+}
+
+.cell.terrain-castle {
+  border-color: #ffd700 !important;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3) 0%, rgba(20, 15, 10, 0.85) 100%);
+}
+
+.cell.terrain-wasteland {
+  border-color: #d2691e !important;
+  background: linear-gradient(135deg, rgba(210, 105, 30, 0.3) 0%, rgba(20, 15, 10, 0.85) 100%);
+}
+
 .cell-name {
   color: #d4a574;
   font-weight: bold;
@@ -345,6 +430,26 @@ function getOwnerId(cellIndex: number): number | null {
 .cell-icon {
   font-size: 1rem;
 }
+
+.terrain-indicator {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 0.7rem;
+}
+
+.area-indicator {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  font-size: 0.5rem;
+  padding: 1px 3px;
+  border-radius: 2px;
+}
+
+.area-indicator.area-wei { background: rgba(255, 0, 0, 0.3); color: #ff6b6b; }
+.area-indicator.area-shu { background: rgba(0, 255, 0, 0.3); color: #6bff6b; }
+.area-indicator.area-wu { background: rgba(0, 0, 255, 0.3); color: #6b6bff; }
 
 .owner-indicator {
   position: absolute;

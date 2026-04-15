@@ -5,32 +5,33 @@
     </div>
 
     <StartScreen
-      v-show="!gameState.state.gameInProgress"
-      :class="{ hidden: gameState.state.gameInProgress }"
+      v-show="!gameStore.gameInProgress"
+      :class="{ hidden: gameStore.gameInProgress }"
       :characters="characters"
       :selection-info="selectionInfo"
       @select="handleCharacterSelect"
     />
 
     <GameBoard
-      v-show="gameState.state.gameInProgress"
-      :players="gameState.state.players"
-      :current-player-index="gameState.state.currentPlayerIndex"
+      v-show="gameStore.gameInProgress"
+      id="board"
+      :players="gameStore.players"
+      :current-player-index="gameStore.currentPlayerIndex"
       :cells="boardCells"
-      :dice-result="diceResult"
-      :messages="messages"
-      :roll-button-enabled="rollButtonEnabled"
-      :game-ended="gameEnded"
-      :is-ai-turn="isAITurn"
-      :weather="gameState.state.weather"
+      :dice-result="gameStore.diceResult"
+      :messages="gameStore.messages"
+      :roll-button-enabled="gameStore.rollButtonEnabled"
+      :game-ended="gameStore.gameEnded"
+      :is-ai-turn="gameStore.isAITurn"
+      :weather="gameStore.weather"
       @roll="handleRollDice"
     />
 
     <Controls
-      :dice-result="diceResult"
-      :enabled="rollButtonEnabled && !gameEnded && !isAITurn"
-      :is-ai-turn="isAITurn"
-      :weather="gameState.state.weather"
+      :dice-result="gameStore.diceResult"
+      :enabled="gameStore.rollButtonEnabled && !gameStore.gameEnded && !gameStore.isAITurn"
+      :is-ai-turn="gameStore.isAITurn"
+      :weather="gameStore.weather"
       :player-items="currentPlayerItems"
       :show-store="showStore"
       @roll="handleRollDice"
@@ -38,12 +39,12 @@
       @use-item="handleUseItem"
     />
 
-    <MessageLog :messages="messages" />
+    <MessageLog :messages="gameStore.messages" />
 
     <StoreModal
       :show="showStore"
       :player="currentPlayer"
-      :weather="gameState.state.weather"
+      :weather="gameStore.weather"
       @close="showStore = false"
       @buy="handleBuyItem"
       @use="handleUseItem"
@@ -58,10 +59,7 @@
 
     <SettingsModal
       :show="showSettings"
-      :game-state="gameState"
-      :audio-options="audio.getOptions()"
       @close="showSettings = false"
-      @apply="handleApplySettings"
       @save="handleSave"
       @load="handleLoad"
     />
@@ -69,13 +67,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, provide } from 'vue'
-import { createGameState } from './stores/gameState'
+import { ref, computed } from 'vue'
+import { useGameStore } from './stores/gameStore'
 import { useGameLogic, EventTypes } from './composables/useGameLogic'
-import { useAI } from './composables/useAI'
+import { useAI, DEFAULT_AI_CONFIG } from './composables/useAI'
 import { useGameStorage } from './composables/useGameStorage'
-import { useAchievements } from './composables/useAchievements'
-import { useAudio } from './composables/useAudio'
 import { characters, boardCells } from './config'
 import StartScreen from './components/StartScreen.vue'
 import GameBoard from './components/GameBoard.vue'
@@ -84,45 +80,32 @@ import MessageLog from './components/MessageLog.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import StoreModal from './components/StoreModal.vue'
 import AchievementPanel from './components/AchievementPanel.vue'
-import type { SavedGame, Achievement } from './types/game'
+import type { Character, SavedGame, Achievement, Player, Cell } from './types/game'
 
-const gameState = createGameState()
-const { selectCharacter, rollDice, nextTurnLogic, buyItem, useItem, upgradeProperty, handleHuarongChoice } = useGameLogic(gameState)
-const ai = useAI()
+const gameStore = useGameStore()
+const gameLogic = useGameLogic(gameStore)
+const ai = useAI(DEFAULT_AI_CONFIG)
 const storage = useGameStorage()
-const achievements = useAchievements()
-const audio = useAudio()
 
 const selectionInfo = ref('点击一个角色为玩家 1 选择英雄')
-const diceResult = ref(0)
-const messages = ref<string[]>([])
-const rollButtonEnabled = ref(false)
-const gameEnded = ref(false)
 const showSettings = ref(false)
-const isAITurn = ref(false)
 const showStore = ref(false)
 const showAchievement = ref(false)
 const currentAchievement = ref<Achievement | null>(null)
 
-// Provide audio to child components
-provide('audio', audio)
-
 // Computed
-const currentPlayer = computed(() => gameState.getCurrentPlayer())
-
+const currentPlayer = computed(() => gameStore.currentPlayer)
 const currentPlayerItems = computed(() => currentPlayer.value?.items ?? [])
 
 // Process game events
-function processEvents(events: any[]) {
+function processEvents(events: GameEvent[]) {
   if (!events || !Array.isArray(events)) return
   for (const event of events) {
     switch (event.type) {
       case EventTypes.APPEND_MESSAGE:
-        messages.value.push(event.payload)
-        if (event.payload.includes('购买')) audio.play('buy')
-        else if (event.payload.includes('破产')) audio.play('lose')
-        else if (event.payload.includes('胜利')) audio.play('win')
-        else if (event.payload.includes('触发')) audio.play('event')
+        if (typeof event.payload === 'string') {
+          gameStore.addMessage(event.payload)
+        }
         break
       case EventTypes.UPDATE_TOKENS:
         break
@@ -131,18 +114,17 @@ function processEvents(events: any[]) {
       case EventTypes.SHOW_GAME:
         break
       case EventTypes.ROLL_BUTTON_ENABLED:
-        rollButtonEnabled.value = event.payload
+        gameStore.rollButtonEnabled = event.payload as boolean
         break
       case EventTypes.UPDATE_DICE:
-        diceResult.value = event.payload
-        audio.play('dice')
+        gameStore.diceResult = event.payload as number
         break
       case EventTypes.CLEAR_MESSAGE:
-        messages.value = []
+        gameStore.clearMessages()
         break
       case EventTypes.GAME_END:
-        gameEnded.value = true
-        rollButtonEnabled.value = false
+        gameStore.gameEnded = true
+        gameStore.rollButtonEnabled = false
         break
       case EventTypes.SHOW_STORE:
         showStore.value = true
@@ -151,74 +133,96 @@ function processEvents(events: any[]) {
         showStore.value = false
         break
       case EventTypes.BUY_ITEM:
-        audio.play('buy')
         break
       case EventTypes.USE_ITEM:
-        audio.play('event')
         break
       case EventTypes.SHOW_ACHIEVEMENT:
         showAchievement.value = true
-        currentAchievement.value = event.payload.achievement
+        currentAchievement.value = (event.payload as { achievement: Achievement }).achievement
         setTimeout(() => {
           showAchievement.value = false
         }, 4000)
-        audio.play('event')
         break
       case EventTypes.SHOW_CHOICE:
-        // Handle choice events (华容道)
-        // Simplified: auto-select first option
         setTimeout(() => {
-          handleHuarongChoice(event.payload.playerId, event.payload.cellIndex, 0, [])
+          gameLogic.handleHuarongChoice(
+            (event.payload as { playerId: number; cellIndex: number }).playerId,
+            (event.payload as { playerId: number; cellIndex: number }).cellIndex,
+            0,
+            []
+          )
         }, 100)
         break
       case EventTypes.UPDATE_WEATHER:
-        // Weather update notification could be shown here
         break
       case 'UPDATE_SELECTION_INFO':
-        selectionInfo.value = event.payload
+        selectionInfo.value = event.payload as string
         break
     }
   }
 }
 
-function handleCharacterSelect(character: any) {
-  audio.play('click')
-  const events = selectCharacter(character, characters)
+function handleCharacterSelect(character: Character) {
+  const events = gameLogic.selectCharacter(character, characters)
   processEvents(events)
 }
 
 function handleRollDice() {
-  if (isAITurn.value || gameEnded.value) return
+  if (gameStore.isAITurn || gameStore.gameEnded || !gameStore.rollButtonEnabled) return
 
-  audio.play('click')
-  const events = rollDice()
+  const events = gameLogic.rollDice()
   processEvents(events)
 
   setTimeout(() => {
-    const nextEvents = nextTurnLogic()
+    const nextEvents = gameLogic.nextTurnLogic()
     processEvents(nextEvents)
     checkAITurn()
   }, 500)
 }
 
 function checkAITurn() {
-  const currentPlayerData = gameState.getCurrentPlayer()
-  if (currentPlayerData && currentPlayerData.isAI) {
-    isAITurn.value = true
-    rollButtonEnabled.value = false
+  const player = gameStore.currentPlayer
+  if (player?.isAI) {
+    gameStore.isAITurn = true
+    gameStore.rollButtonEnabled = false
     executeAITurn()
   }
 }
 
 async function executeAITurn() {
-  await ai.executeAITurn()
-  const events = rollDice()
+  const player = gameStore.currentPlayer
+  if (!player) return
+
+  // AI decision making
+  const ctx = gameLogic.getGameContext()
+  const cell = boardCells[player.position]
+  const decision = ai.executeAITurn(player, ctx, cell)
+
+  // Apply AI decision
+  switch (decision.action) {
+    case 'buy':
+      if (cell.type === 'property' && cell.cost && player.money >= cell.cost) {
+        player.money -= cell.cost
+        player.properties.push({ ...cell, level: 0 })
+        gameStore.setPropertyOwner(cell.index ?? 0, player.id, 0)
+        gameStore.addMessage(`${player.character.name}购买了${cell.name}！`)
+      }
+      break
+    case 'upgrade':
+      if (decision.targetCell !== undefined) {
+        gameLogic.upgradeProperty(player, decision.targetCell, [])
+      }
+      break
+  }
+
+  // Roll dice
+  const events = gameLogic.rollDice()
   processEvents(events)
 
   setTimeout(() => {
-    const nextEvents = nextTurnLogic()
+    const nextEvents = gameLogic.nextTurnLogic()
     processEvents(nextEvents)
-    isAITurn.value = false
+    gameStore.isAITurn = false
     checkAITurn()
   }, 500)
 }
@@ -226,53 +230,55 @@ async function executeAITurn() {
 function handleBuyItem(itemId: string) {
   const player = currentPlayer.value
   if (!player) return
-
-  const itemEvents = buyItem(player, itemId, [])
-  processEvents(itemEvents)
+  const events = gameLogic.buyItem(player, itemId, [])
+  processEvents(events)
 }
 
 function handleUseItem(itemId: string) {
   const player = currentPlayer.value
   if (!player) return
-
-  const itemEvents = useItem(player, itemId, [])
-  processEvents(itemEvents)
+  const events = gameLogic.useItem(player, itemId, [])
+  processEvents(events)
 }
 
 function handleUpgradeProperty(cellIndex: number) {
   const player = currentPlayer.value
   if (!player) return
-
-  const upgradeEvents: any[] = []
-  upgradeProperty(player, cellIndex, upgradeEvents)
-  processEvents(upgradeEvents)
-}
-
-function handleApplySettings(newSettings: any) {
-  audio.setVolume(newSettings.volume)
-  audio.setMuted(newSettings.muted)
+  const events: GameEvent[] = []
+  gameLogic.upgradeProperty(player, cellIndex, events)
+  processEvents(events)
 }
 
 function handleSave() {
   storage.saveGame(
-    gameState.state.players,
-    gameState.state.currentPlayerIndex,
-    gameState.state.propertyOwners,
-    gameState.state.weather,
-    gameState.state.turnCount,
-    messages.value
+    gameStore.players,
+    gameStore.currentPlayerIndex,
+    Object.fromEntries(
+      Object.entries(gameStore.propertyOwners).map(([k, v]) => [k, v.playerId])
+    ) as Record<number, number>,
+    gameStore.weather,
+    gameStore.turnCount,
+    gameStore.messages
   )
 }
 
 function handleLoad(saved: SavedGame) {
-  gameState.state.players = saved.players
-  gameState.state.currentPlayerIndex = saved.currentPlayerIndex
-  gameState.state.propertyOwners = saved.propertyOwners
-  gameState.state.weather = saved.weather
-  gameState.state.turnCount = saved.turnCount
-  gameState.state.messages = saved.messages ?? []
-  gameState.state.gameInProgress = true
-  rollButtonEnabled.value = true
+  gameStore.players = saved.players
+  gameStore.currentPlayerIndex = saved.currentPlayerIndex
+  for (const [cellIndex, playerId] of Object.entries(saved.propertyOwners)) {
+    gameStore.setPropertyOwner(parseInt(cellIndex), playerId as number, 0)
+  }
+  gameStore.weather = saved.weather
+  gameStore.turnCount = saved.turnCount
+  gameStore.messages = saved.messages ?? []
+  gameStore.gameInProgress = true
+  gameStore.rollButtonEnabled = true
+}
+
+// Types
+interface GameEvent {
+  type: string
+  payload?: unknown
 }
 </script>
 
